@@ -43,6 +43,11 @@ integration**. **Module 01 is complete.** Foundation only — still zero trading
   to avoid shadowing the `time` builtin (fields were write-only; no behavior change).
 - Removed obsolete milestone/scaffolding comments; refreshed section banners now that
   Module 01 is complete.
+- **Pine v6 compiler fixes:** `Config.diagBufferCap` default is now the literal `100`
+  (Pine forbids named constants in UDT field defaults; `cfgBuild` still overrides it from
+  the input); `errApplyValidation` uses two independent `if` statements instead of an
+  `if/else-if` chain to avoid mismatched branch return types `(void; series int)`.
+  Behavior unchanged.
 
 ### Notes
 - Verification: one `strategy()`; zero entries/exits/orders, `request.security`, `ta.*`, or

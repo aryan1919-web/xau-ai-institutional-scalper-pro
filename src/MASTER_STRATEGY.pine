@@ -238,7 +238,7 @@ type Config
     bool           sessionEnabled     = false
     int            sessionStartMinute = 0     // minute of day (exchange tz)
     int            sessionEndMinute   = 0     // minute of day (exchange tz)
-    int            diagBufferCap      = DIAG_BUFFER_CAP
+    int            diagBufferCap      = 100   // literal required by Pine field-default rule; equals DIAG_BUFFER_CAP, overridden in cfgBuild
     // Module enable toggles (mirror of the inputs; consumed by cfgBuild).
     bool           enableCore         = false
     bool           enableTrend        = false
@@ -515,9 +515,11 @@ errApplyValidation(Diagnostics diag, array<ValidationResult> results, LogLevel t
     if n > 0
         for i = 0 to n - 1
             ValidationResult r = array.get(results, i)
+            // Independent statements (not an if/else-if expression) so the fatal
+            // (runtime.error) and warning branches do not share a return type.
             if r.severity == ValidationSeverity.fatal
                 errRaiseFatal(r.errorId, r.message)
-            else if r.severity == ValidationSeverity.warning
+            if r.severity == ValidationSeverity.warning
                 errWarn(diag, r.errorId, r.message, threshold, debugEnabled)
 
 // -----------------------------------------------------------------------------
