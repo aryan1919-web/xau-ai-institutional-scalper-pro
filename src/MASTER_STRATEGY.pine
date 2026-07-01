@@ -10,20 +10,19 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.1.1  (Module 02 · M2.1 — Core ctxHtfValue HTF primitive)
+//  Version      : 0.1.2  (Module 02 · M2.2 — trend types & configuration)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
 //  STATUS       : Module 01 (Core Framework) frozen at v0.1.0. Module 02 (Trend
-//                 Engine) in progress. M2.1 implements the reserved Core HTF
-//                 primitive:
-//                   - ctxHtfValue        : the single sanctioned request.security
-//                                          wrapper (non-repainting; ADR-0011).
-//                   - ctxIsHigherTimeframe: HTF >= chart timeframe validation.
-//                 Defined but not yet invoked; no trend logic. Still NO trading
-//                 behavior: no entries/exits/orders, no ta.*, no plots, no
-//                 calculations. The ONLY request.security in the strategy lives
-//                 inside ctxHtfValue and is not yet called.
+//                 Engine) in progress. M2.2 adds the Trend Engine DATA MODEL only:
+//                   - enums : TrendStrength, TrendPhase
+//                   - types : TrendConfig, TrendState, TrendMemory
+//                   - Config.trend, KernelState.trendMemory, trend inputs,
+//                     cfgBuild/cfgValidate extension, TREND-CFG error IDs.
+//                 NO trend logic: no EMA, no ta.*, no scoring, no signals, no
+//                 plots, no entries/exits/orders. The ONLY request.security is
+//                 the (still uninvoked) ctxHtfValue.
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -70,7 +69,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.1.1"
+const string PROJECT_VERSION = "0.1.2"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -119,6 +118,11 @@ const string ERR_CFG_INVALID_SESSION  = "CORE-CFG-002"   // malformed / inverted
 const string ERR_CFG_DIAG_CAP_RANGE   = "CORE-CFG-003"   // diagnostics buffer cap out of range
 const string ERR_STATE_REINIT         = "CORE-STATE-001" // attempted re-initialization
 const string ERR_ASSERT_FAILED        = "CORE-ASSERT-001"// debug assertion failed
+
+// -- Trend Engine (Module 02) error IDs.
+const string ERR_TREND_HTF_NOT_HIGHER  = "TREND-CFG-001" // HTF <= chart timeframe (used from M2.4)
+const string ERR_TREND_FAST_GE_SLOW    = "TREND-CFG-002" // fast length >= slow length
+const string ERR_TREND_THRESHOLD_RANGE = "TREND-CFG-003" // threshold out of [0, 1]
 
 // -- Input group titles (kept as constants to avoid duplicated string literals).
 const string G_01_CORE       = "01 · Core Framework"
@@ -175,6 +179,21 @@ enum ValidationSeverity
     warning
     fatal
 
+// TrendStrength — normalized discrete strength band (Module 02, Trend Engine).
+enum TrendStrength
+    flat
+    weak
+    moderate
+    strong
+
+// TrendPhase — trend lifecycle / transition state (Module 02, Trend Engine).
+enum TrendPhase
+    absent
+    forming
+    established
+    weakening
+    reversing
+
 
 // =============================================================================
 //  TYPES (USER-DEFINED TYPES)
@@ -229,6 +248,46 @@ type ValidationResult
     string             errorId  = ""
     string             message  = ""
 
+// -- Module 02 · Trend Engine — shared types (M2.2). Data model only; no logic.
+//    Declared before Config/KernelState because those nest TrendConfig/TrendMemory.
+
+// TrendConfig — trend configuration snapshot (nested as Config.trend). Owned by
+// `cfg`; populated by cfgBuild. Configuration values only, no runtime state.
+type TrendConfig
+    bool   enabled           = false
+    bool   useMtf            = false
+    string htfTimeframe      = ""
+    int    fastLength        = 21    // formula-agnostic fast lookback (must be < slowLength)
+    int    slowLength        = 50    // formula-agnostic slow lookback (must be > fastLength)
+    float  flatThreshold     = 0.2   // normalized strength below which the trend is flat
+    float  strengthThreshold = 0.5   // normalized strength at/above which the trend is active
+    int    confirmBars       = 1     // bars to confirm a trend transition
+
+// TrendState — immutable per-bar trend snapshot; the public ABI (ADR-0015 family
+// R6-R11). Formula-agnostic: normalized outputs only, no implementation values.
+// Produced only by trendEvaluate (later milestones); a per-bar snapshot.
+type TrendState
+    Direction     direction    = Direction.flat
+    TrendStrength strengthBand = TrendStrength.flat
+    float         strength     = 0.0
+    float         confidence   = 0.0
+    float         quality      = 0.0
+    TrendPhase    phase        = TrendPhase.absent
+    bool          aligned      = false
+    bool          isActive     = false
+    int           barIndex     = 0
+
+// TrendMemory — minimal cross-bar trend memory (metadata only; nested as
+// KernelState.trendMemory). No calculations, no detection. Read/written only by
+// trendEvaluate (later milestones).
+type TrendMemory
+    Direction  previousDirection = Direction.flat
+    TrendPhase previousPhase     = TrendPhase.absent
+    float      previousStrength  = 0.0
+    int        barsInTrend       = 0
+    int        reversalCounter   = 0
+    int        transitionCounter = 0
+
 // Config — immutable, validated configuration snapshot. Owned by `cfg`; built
 // once and read via cfgGet(). Trading parameters are added by their modules.
 type Config
@@ -255,6 +314,8 @@ type Config
     bool           enableDashboard    = false
     bool           enableAlerts       = false
     bool           enableOptimize     = false
+    // Module 02 — Trend Engine configuration (nested; built by cfgBuild).
+    TrendConfig    trend
 
 // KernelState — the single persistent (var) object; the sole mutable global
 // (docs/DECISIONS.md ADR-0009). Owned by `state`; created on the first bar.
@@ -266,6 +327,8 @@ type KernelState
     TimeframeContext tf
     Diagnostics      diag
     bool             errorLatched          = false
+    // Module 02 — Trend Engine cross-bar memory (built by stateInit).
+    TrendMemory      trendMemory
 
 
 // =============================================================================
@@ -286,7 +349,7 @@ int      inpDiagBufferCap      = input.int(DIAG_BUFFER_CAP, "Diagnostics buffer 
 
 // -- Module enable toggles. ---------------------------------------------------
 bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.1.0.")
-bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.1.0.")
+bool inpEnableTrend      = input.bool(false, "Enable Trend Engine", group = G_02_TREND, tooltip = "Master enable for the Trend Engine (Module 02). Configuration only in v0.1.2; trend logic arrives in M2.3+.")
 bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.1.0.")
 bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.1.0.")
 bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.1.0.")
@@ -299,6 +362,15 @@ bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", grou
 bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.1.0.")
 bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.1.0.")
 bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.1.0.")
+
+// -- Trend Engine (Module 02) configuration inputs (consumed only by cfgBuild).
+bool   inpTrendUseMtf            = input.bool(false, "Use HTF confirmation", group = G_02_TREND, tooltip = "Confirm the chart-timeframe trend against a higher timeframe. No effect until M2.4.")
+string inpTrendHtf               = input.timeframe("5", "HTF timeframe", group = G_02_TREND, tooltip = "Higher timeframe for confirmation (must be >= chart timeframe). Read via ctxHtfValue in M2.4.")
+int    inpTrendFastLength        = input.int(21, "Fast length", minval = 1, group = G_02_TREND, tooltip = "Fast trend lookback length (formula-agnostic; must be < slow).")
+int    inpTrendSlowLength        = input.int(50, "Slow length", minval = 2, group = G_02_TREND, tooltip = "Slow trend lookback length (formula-agnostic; must be > fast).")
+float  inpTrendFlatThreshold     = input.float(0.2, "Flat threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_02_TREND, tooltip = "Normalized strength below which the trend is flat.")
+float  inpTrendStrengthThreshold = input.float(0.5, "Strength threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_02_TREND, tooltip = "Normalized strength at/above which the trend is active.")
+int    inpTrendConfirmBars       = input.int(1, "Confirmation bars", minval = 1, group = G_02_TREND, tooltip = "Bars required to confirm a trend transition (used in M2.3+).")
 
 
 // =============================================================================
@@ -546,6 +618,21 @@ cfgValidate(Config draft) =>
     if clampedCap != draft.diagBufferCap
         array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_CFG_DIAG_CAP_RANGE, "diagBufferCap out of range; clamped to " + str.tostring(clampedCap)))
         draft.diagBufferCap := clampedCap
+    // Module 02 — Trend Engine config validation (config only; no trend logic).
+    // (HTF >= chart timeframe, TREND-CFG-001, is validated in M2.4 alongside MTF.)
+    if not na(draft.trend)
+        // Fatal: fast lookback must be below slow lookback.
+        if draft.trend.fastLength >= draft.trend.slowLength
+            array.push(results, ValidationResult.new(ValidationSeverity.fatal, ERR_TREND_FAST_GE_SLOW, "trend fast length must be less than slow length"))
+        // Recoverable: clamp normalized thresholds into [0, 1].
+        float clampedFlat = utilClamp(draft.trend.flatThreshold, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+        if clampedFlat != draft.trend.flatThreshold
+            array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_TREND_THRESHOLD_RANGE, "trend flatThreshold out of [0,1]; clamped"))
+            draft.trend.flatThreshold := clampedFlat
+        float clampedStrength = utilClamp(draft.trend.strengthThreshold, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+        if clampedStrength != draft.trend.strengthThreshold
+            array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_TREND_THRESHOLD_RANGE, "trend strengthThreshold out of [0,1]; clamped"))
+            draft.trend.strengthThreshold := clampedStrength
     results
 
 // cfgBuild(diag)   @experimental
@@ -580,6 +667,16 @@ cfgBuild(Diagnostics diag) =>
     draft.enableDashboard    := inpEnableDashboard
     draft.enableAlerts       := inpEnableAlerts
     draft.enableOptimize     := inpEnableOptimize
+    // Module 02 — Trend Engine configuration snapshot.
+    draft.trend := TrendConfig.new()
+    draft.trend.enabled           := inpEnableTrend
+    draft.trend.useMtf            := inpTrendUseMtf
+    draft.trend.htfTimeframe      := inpTrendHtf
+    draft.trend.fastLength        := inpTrendFastLength
+    draft.trend.slowLength        := inpTrendSlowLength
+    draft.trend.flatThreshold     := inpTrendFlatThreshold
+    draft.trend.strengthThreshold := inpTrendStrengthThreshold
+    draft.trend.confirmBars       := inpTrendConfirmBars
     array<ValidationResult> results = cfgValidate(draft)
     errApplyValidation(diag, results, draft.logThreshold, draft.debugEnabled)
     draft
@@ -700,6 +797,8 @@ stateInit(Config config, Diagnostics diag) =>
     state.config.primaryTfClass := state.tf.tfClass
     if config.requireSupportedTf and not state.tf.isSupportedPrimary
         errRaiseFatal(ERR_CFG_UNSUPPORTED_TF, "unsupported chart timeframe; require a primary M1 or M5 chart")
+    // Module 02 — initialize the (empty) trend cross-bar memory; no trend logic yet.
+    state.trendMemory := TrendMemory.new()
     state.initialized := true
     state
 
@@ -825,8 +924,8 @@ BarContext context = coreOnBar(coreState)
 // =============================================================================
 //  MODULE 02 — MILESTONE PROGRESS (Trend Engine)
 // -----------------------------------------------------------------------------
-//    [x] M2.1  Core ctxHtfValue HTF primitive                  (v0.1.1, current)
-//    [ ] M2.2  Trend types, inputs, configuration              (v0.1.2)
+//    [x] M2.1  Core ctxHtfValue HTF primitive                  (v0.1.1)
+//    [x] M2.2  Trend types, inputs, configuration              (v0.1.2, current)
 //    [ ] M2.3  Chart-timeframe trend model                     (v0.1.3)
 //    [ ] M2.4  Multi-timeframe synthesis + confidence/quality  (v0.1.4)
 //    [ ] M2.5  Integration + finalize (Trend API -> Stable)    (v0.2.0)

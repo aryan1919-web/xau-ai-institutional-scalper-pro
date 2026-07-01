@@ -3,7 +3,7 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** Planned · **Target version:** `0.2.0` · **Depends on:** Module 01
+> **Status:** In implementation — M2.1 (`v0.1.1`) + M2.2 (`v0.1.2`) done · **Target version:** `0.2.0` · **Depends on:** Module 01
 
 ## Overview
 
@@ -36,9 +36,28 @@ wrapper ([ADR-0015](../../../docs/DECISIONS.md), [API.md](../../../docs/API.md))
 - Any change to `ctxHtfValue`'s behavior requires a **new ADR**. Trend `request.security`
   budget ≤ 2 (project ≤ 8), raised only by ADR.
 
+## Data model (M2.2, v0.1.2)
+
+Types + configuration only — no trend logic yet.
+
+- **Enums:** `TrendStrength {flat, weak, moderate, strong}`, `TrendPhase {absent, forming,
+  established, weakening, reversing}`. Trend **direction reuses Core `Direction {long, short,
+  flat}`** (D4 — no separate trend-direction enum).
+- **`TrendState`** — the immutable per-bar snapshot and public **ABI** (R6–R11): `direction`,
+  `strengthBand`, `strength`, `confidence`, `quality`, `phase`, `aligned`, `isActive`,
+  `barIndex`. Formula-agnostic (normalized outputs only; no EMA/ADX/etc.). Produced only by
+  `trendEvaluate` (M2.3+).
+- **`TrendConfig`** — trend configuration, nested as `Config.trend`, populated by `cfgBuild`.
+- **`TrendMemory`** — minimal cross-bar memory, nested as `KernelState.trendMemory`, initialized
+  empty by `stateInit`: `previousDirection/Phase/Strength`, `barsInTrend`, `reversalCounter`,
+  `transitionCounter`.
+- **Validation** (in `cfgValidate`, `ValidationResult` only): `TREND-CFG-002` fast ≥ slow (fatal),
+  `TREND-CFG-003` threshold out of `[0,1]` (recoverable). `TREND-CFG-001` (HTF ≥ chart) reserved for M2.4.
+
 ## Design decisions
 
-- _None yet._
+- Fast/slow length inputs are **formula-agnostic** lookback slots (labeled generically, not
+  "EMA") to keep the algorithm replaceable (R2/R6/R7).
 
 ## Research notes
 

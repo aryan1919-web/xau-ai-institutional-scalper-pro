@@ -162,10 +162,39 @@ diagnostics harness exercising util / log / err / cfg / ctx.
 
 None. (`ctxHtfValue` was implemented in `0.1.1` — see the context table above.)
 
+## Module 02 — Trend Engine
+
+Data model only (M2.2, `v0.1.2`). No public functions yet — trend computation and the
+`trend*` API arrive in M2.3+ (Experimental until `v0.2.0`, R5). `TrendState` is the immutable
+per-bar ABI (R6–R11); trend direction reuses Core `Direction` (no separate trend-direction enum).
+
+### Enums (Since 0.1.2)
+
+| Enum | Members |
+|------|---------|
+| `TrendStrength` | `flat`, `weak`, `moderate`, `strong` (normalized strength band) |
+| `TrendPhase` | `absent`, `forming`, `established`, `weakening`, `reversing` |
+
+### Types (Since 0.1.2)
+
+| Type | Role |
+|------|------|
+| `TrendConfig` | Trend configuration snapshot, nested as `Config.trend` (built by `cfgBuild`). Config values only. |
+| `TrendState` | Immutable per-bar trend snapshot (the ABI): `direction:Direction`, `strengthBand:TrendStrength`, `strength/confidence/quality:float(0..1)`, `phase:TrendPhase`, `aligned:bool`, `isActive:bool`, `barIndex:int`. Formula-agnostic (no implementation values). |
+| `TrendMemory` | Minimal cross-bar memory, nested as `KernelState.trendMemory` (built by `stateInit`): `previousDirection`, `previousPhase`, `previousStrength`, `barsInTrend`, `reversalCounter`, `transitionCounter`. |
+
+### Configuration & validation
+- **Inputs** (group *02 · Trend Engine*, read only by `cfgBuild`): `inpEnableTrend`,
+  `inpTrendUseMtf`, `inpTrendHtf`, `inpTrendFastLength`, `inpTrendSlowLength`,
+  `inpTrendFlatThreshold`, `inpTrendStrengthThreshold`, `inpTrendConfirmBars`.
+- **Validation** (in `cfgValidate`; returns `ValidationResult` only): `TREND-CFG-002` fast ≥ slow
+  (fatal); `TREND-CFG-003` threshold out of `[0,1]` (recoverable clamp+warn). `TREND-CFG-001`
+  (HTF ≥ chart timeframe) is reserved for M2.4.
+
 ## Other module public functions
 
 Populated as each subsequent module is implemented, grouped by module.
 
 | Module | Function | Since | Summary |
 |--------|----------|-------|---------|
-| 02–14 | — | — | Not yet designed. |
+| 03–14 | — | — | Not yet designed. |

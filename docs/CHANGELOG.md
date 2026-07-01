@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.1.2] - 2026-07-01
+
+Module 02 (Trend Engine) — milestone **M2.2: trend types & configuration**. Data model only;
+no trend logic. (The `v0.1.2` git tag is created manually after review.)
+
+### Added
+- **Enums:** `TrendStrength {flat, weak, moderate, strong}`, `TrendPhase {absent, forming,
+  established, weakening, reversing}`. Trend direction reuses Core `Direction` (no new enum).
+- **Types:** `TrendConfig` (config snapshot), `TrendState` (immutable per-bar ABI —
+  formula-agnostic normalized outputs), `TrendMemory` (minimal cross-bar memory).
+- **Extensions:** `Config.trend` (`TrendConfig`, built by `cfgBuild`);
+  `KernelState.trendMemory` (`TrendMemory`, initialized empty by `stateInit`).
+- **Trend inputs** (group *02 · Trend Engine*, read only by `cfgBuild`): enable, use-HTF,
+  HTF timeframe, fast/slow length, flat/strength thresholds, confirmation bars.
+- **Validation** in `cfgValidate` (returns `ValidationResult` only; no `runtime.error`):
+  `TREND-CFG-002` fast ≥ slow (fatal), `TREND-CFG-003` threshold out of `[0,1]` (recoverable).
+- **Error-ID registry:** `TREND-CFG-001` (reserved, M2.4), `TREND-CFG-002`, `TREND-CFG-003`.
+
+### Changed
+- `PROJECT_VERSION` `0.1.1` → `0.1.2`.
+- `inpEnableTrend` relabeled to a real "Enable Trend Engine" toggle (still default off).
+- `docs/ROADMAP.md`: current marker moved to `0.1.2`.
+
+### Notes
+- No trend logic: **no EMA, no `ta.*`, no scoring, no signals, no plots, no orders**. The lone
+  `request.security` remains inside `ctxHtfValue` and is not yet invoked.
+- Per the approved architecture, `TrendState` is the immutable UDT **ABI** (not an enum); the
+  M2.2-requested `{Bullish, Bearish, Neutral}` maps to Core `Direction {long, short, flat}`.
+- Trend fast/slow length inputs are **formula-agnostic** lookback slots (labeled generically,
+  not "EMA") per R2/R6/R7.
+- Next: M2.3 (`0.1.3`) — chart-timeframe trend model.
+
 ## [0.1.1] - 2026-07-01
 
 Module 02 (Trend Engine) — milestone **M2.1: Core `ctxHtfValue` HTF primitive**. The
@@ -196,7 +228,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.1.1...HEAD
+[Unreleased]: https://example.com/compare/v0.1.2...HEAD
+[0.1.2]: https://example.com/compare/v0.1.1...v0.1.2
 [0.1.1]: https://example.com/compare/v0.1.0...v0.1.1
 [0.1.0]: https://example.com/compare/v0.0.4...v0.1.0
 [0.0.4]: https://example.com/compare/v0.0.3...v0.0.4
