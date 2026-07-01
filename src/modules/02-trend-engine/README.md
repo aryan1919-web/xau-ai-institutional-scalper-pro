@@ -3,7 +3,7 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** In implementation — M2.1 (`v0.1.1`) + M2.2 (`v0.1.2`) done · **Target version:** `0.2.0` · **Depends on:** Module 01
+> **Status:** In implementation — M2.1 (`v0.1.1`) + M2.2 (`v0.1.2`) + M2.3 (`v0.1.3`) done · **Target version:** `0.2.0` · **Depends on:** Module 01
 
 ## Overview
 
@@ -54,10 +54,26 @@ Types + configuration only — no trend logic yet.
 - **Validation** (in `cfgValidate`, `ValidationResult` only): `TREND-CFG-002` fast ≥ slow (fatal),
   `TREND-CFG-003` threshold out of `[0,1]` (recoverable). `TREND-CFG-001` (HTF ≥ chart) reserved for M2.4.
 
+## Chart-timeframe model (M2.3, v0.1.3)
+
+- `trendEvaluate(state, context)` produces the immutable `TrendState` each bar (wired in MAIN;
+  result unused — no signals/orders/plots). It is the sole producer of `TrendState` and the sole
+  reader/updater of `KernelState.trendMemory` (R8/R9/R10; `trendMemory` is lazily initialized here).
+- The chart-TF **formula** (fast/slow EMA separation scaled by ATR, normalized to `[0,1]`) lives
+  entirely in `@internal` `trendChartView`; it is **replaceable** without changing the ABI
+  (R2/R6/R7). Raw EMA/ATR values never reach `TrendState` (R6).
+- `trendClassifyStrength` maps strength → band; `trendClassifyPhase` derives the lifecycle phase
+  from current values + the previous-bar memory (stateless — memory passed as parameters, R10).
+- Chart-only baseline: `confidence`/`quality` track `strength` and `aligned` is trivially true;
+  multi-timeframe confirmation differentiates them in **M2.4**.
+- Pure accessors: `trendDirection/Strength/Confidence/Quality/Phase/IsActive/IsAligned`
+  (Experimental until `v0.2.0`, R5).
+
 ## Design decisions
 
 - Fast/slow length inputs are **formula-agnostic** lookback slots (labeled generically, not
   "EMA") to keep the algorithm replaceable (R2/R6/R7).
+- `TrendMemory` holds only PREVIOUS-bar values + counters — never current `TrendState` values (R5).
 
 ## Research notes
 

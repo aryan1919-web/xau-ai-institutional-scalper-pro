@@ -164,9 +164,26 @@ None. (`ctxHtfValue` was implemented in `0.1.1` — see the context table above.
 
 ## Module 02 — Trend Engine
 
-Data model only (M2.2, `v0.1.2`). No public functions yet — trend computation and the
-`trend*` API arrive in M2.3+ (Experimental until `v0.2.0`, R5). `TrendState` is the immutable
-per-bar ABI (R6–R11); trend direction reuses Core `Direction` (no separate trend-direction enum).
+Chart-timeframe trend model implemented (M2.3, `v0.1.3`); MTF arrives in M2.4. The `trend*`
+public API is **Experimental until `v0.2.0`** (R5). `TrendState` is the immutable per-bar ABI
+(R6–R11); trend direction reuses Core `Direction` (no separate trend-direction enum).
+
+### Public API (Since 0.1.3) · Experimental
+
+| Function | Signature | Returns | Role |
+|----------|-----------|---------|------|
+| `trendEvaluate` | `trendEvaluate(state, context)` | `TrendState` | Sole producer of `TrendState`; sole reader/updater of `KernelState.trendMemory` (R8/R10). Wired in MAIN. |
+| `trendDirection` | `trendDirection(ts)` | `Direction` | pure accessor |
+| `trendStrength` | `trendStrength(ts)` | `float` 0..1 | pure accessor |
+| `trendConfidence` | `trendConfidence(ts)` | `float` 0..1 | pure accessor |
+| `trendQuality` | `trendQuality(ts)` | `float` 0..1 | pure accessor |
+| `trendPhase` | `trendPhase(ts)` | `TrendPhase` | pure accessor |
+| `trendIsActive` | `trendIsActive(ts)` | `bool` | pure accessor |
+| `trendIsAligned` | `trendIsAligned(ts)` | `bool` | pure accessor (trivially true until M2.4) |
+
+**Internal helpers (Since 0.1.3):** `trendChartView`, `trendClassifyStrength`, `trendClassifyPhase`.
+The trend **formula lives entirely in these helpers** (fast/slow EMA + ATR in M2.3) and is
+replaceable without changing `TrendState` (R2/R7); raw indicator values never reach `TrendState` (R6).
 
 ### Enums (Since 0.1.2)
 

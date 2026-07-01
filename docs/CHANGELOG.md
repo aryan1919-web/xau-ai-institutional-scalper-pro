@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.1.3] - 2026-07-01
+
+Module 02 (Trend Engine) — milestone **M2.3: chart-timeframe trend model**. The trend now
+computes each bar; no signals/orders/plots/alerts. (The `v0.1.3` git tag is created manually
+after review.)
+
+### Added
+- **`trendEvaluate(state, context) → TrendState`** (Experimental): the sole producer of the
+  immutable `TrendState` and sole reader/updater of `KernelState.trendMemory` (R8/R9/R10).
+  Wired into MAIN — computed every bar; result unused (seam for Modules 03+/09).
+- **Pure accessors** (Experimental): `trendDirection`, `trendStrength`, `trendConfidence`,
+  `trendQuality`, `trendPhase`, `trendIsActive`, `trendIsAligned`.
+- **Internal helpers:** `trendChartView`, `trendClassifyStrength`, `trendClassifyPhase`. The
+  chart-TF formula (fast/slow EMA + ATR separation, normalized) lives entirely here and is
+  replaceable without changing the ABI (R2/R6/R7); raw indicator values never reach `TrendState`.
+- **Type:** `TrendTimeframeView` (internal) — one timeframe's normalized view.
+
+### Changed
+- `PROJECT_VERSION` `0.1.2` → `0.1.3`.
+- `trendMemory` initialization moved from `stateInit` to `trendEvaluate` (lazy) so that
+  `trendEvaluate` is the **only** function that touches `TrendMemory` (strict R10).
+- `MODULE PLACEHOLDERS` banner now covers modules 03–14 (02 implemented).
+- `docs/ROADMAP.md`: current marker moved to `0.1.3`.
+
+### Notes
+- Chart timeframe only; multi-timeframe confirmation and independent confidence/quality arrive
+  in M2.4. In M2.3 `confidence`/`quality` baseline to `strength` and `aligned` is trivially true.
+- `ta.ema`/`ta.atr` are now used (chart-TF, `@internal`, non-repainting at bar close). The lone
+  `request.security` remains inside `ctxHtfValue` and is still **not invoked** (count = 1).
+- No repainting: chart-TF indicators on confirmed bars; deterministic; O(1) per bar.
+- Next: M2.4 (`0.1.4`) — multi-timeframe synthesis + confidence/quality.
+
 ## [0.1.2] - 2026-07-01
 
 Module 02 (Trend Engine) — milestone **M2.2: trend types & configuration**. Data model only;
@@ -228,7 +260,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.1.2...HEAD
+[Unreleased]: https://example.com/compare/v0.1.3...HEAD
+[0.1.3]: https://example.com/compare/v0.1.2...v0.1.3
 [0.1.2]: https://example.com/compare/v0.1.1...v0.1.2
 [0.1.1]: https://example.com/compare/v0.1.0...v0.1.1
 [0.1.0]: https://example.com/compare/v0.0.4...v0.1.0

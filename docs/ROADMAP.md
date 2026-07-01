@@ -55,8 +55,8 @@ is consistent.
 | `0.0.4` | M1.3 — Core: configuration & context | `cfg` (immutable `Config`) and `ctx` (confirmed-bar/session/timeframe). |
 | `0.1.0` | M1.4 — Module 01 Core Framework complete | `KernelState`, lifecycle (`coreInit`/`coreOnBar`), diagnostics, integration. |
 | `0.1.1` | M2.1 — Core `ctxHtfValue` HTF primitive | Sanctioned non-repainting `request.security` wrapper (Core). |
-| `0.1.2` | M2.2 — Trend: types, inputs, config | Trend enums/UDTs (`TrendState`, `TrendMemory`), `Config.trend`, validation. **(current)** |
-| `0.1.3` | M2.3 — Trend: chart-timeframe model | Chart-TF direction/strength (replaceable formulas), accessors. |
+| `0.1.2` | M2.2 — Trend: types, inputs, config | Trend enums/UDTs (`TrendState`, `TrendMemory`), `Config.trend`, validation. |
+| `0.1.3` | M2.3 — Trend: chart-timeframe model | Chart-TF direction/strength (replaceable formulas), `trendEvaluate`, accessors. **(current)** |
 | `0.1.4` | M2.4 — Trend: multi-timeframe synthesis | MTF via `ctxHtfValue`, alignment, confidence, quality, phases. |
 | `0.2.0` | M2.5 — Module 02 Trend Engine complete | Integration; Trend API promoted to Stable; `TrendState` ABI locked. |
 | `0.3.0` | M3 — Module 03 Momentum Engine | Momentum / strength assessment. |
