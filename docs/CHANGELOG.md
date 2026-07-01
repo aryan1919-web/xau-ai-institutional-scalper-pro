@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.2.1] - 2026-07-01
+
+Module 03 (Momentum Engine) — milestone **M3.1: shared types & configuration**. Data model and
+configuration only; **no momentum logic**. Depends on Core (Module 01) and, later, Trend (Module
+02, read-only). (The `v0.2.1` git tag is created manually after review.)
+
+### Added
+- **Enums:** `MomentumStrength {flat, weak, moderate, strong}`, `MomentumPhase {neutral,
+  accelerating, sustained, decelerating, exhausted}`. Momentum direction reuses Core `Direction`.
+- **Types:** `MomentumConfig` (config snapshot), `MomentumState` (immutable per-bar ABI —
+  formula-agnostic normalized outputs), `MomentumMemory` (minimal cross-bar memory),
+  `MomentumTimeframeView` (internal transport, kept separate from `TrendTimeframeView` by design).
+- **Extensions:** `Config.momentum` (`MomentumConfig`, built by `cfgBuild`);
+  `KernelState.momentumMemory` (`MomentumMemory`, declared but not yet used).
+- **Momentum inputs** (group *03 · Momentum Engine*, read only by `cfgBuild`): enable, use-HTF,
+  HTF timeframe, fast/slow/acceleration length, flat/strength thresholds, confirmation bars,
+  require-trend-alignment. The Module 03 placeholder enable input is repurposed as the real toggle.
+- **Validation** in `cfgValidate` (returns `ValidationResult` only; centralized — no separate
+  momentum validator): `MOM-CFG-001` HTF < chart when MTF on (fatal), `MOM-CFG-002` fast ≥ slow
+  (fatal), `MOM-CFG-003` threshold out of `[0,1]` (recoverable), `MOM-CFG-004` flatThreshold >
+  strengthThreshold (recoverable), `MOM-CFG-005` accelLength < 1 (recoverable clamp).
+- **Error-ID registry:** `MOM-CFG-001` … `MOM-CFG-005`.
+
+### Changed
+- `PROJECT_VERSION` `0.2.0` → `0.2.1`.
+- `docs/ROADMAP.md`: current marker moved to `0.2.1`.
+
+### Notes
+- **No behavior:** no `momentumEvaluate`, no helpers, no `ta.*`, no EMA/RSI/MACD/ROC, no
+  acceleration/divergence/phase computation, no HTF logic, no `ctxHtfValue` call, no Trend
+  interaction, no accessors, no MAIN wiring. No signals/entries/exits/orders, no plots, no alerts.
+- **Invariants preserved:** exactly one executable `request.security` (inside `ctxHtfValue`);
+  the single existing `ctxHtfValue` call site (Trend) is unchanged; Modules 01 & 02 untouched
+  (ADR-0015 / ADR-0016 respected).
+- Next: M3.2 (`0.2.2`) — chart-timeframe momentum model.
+
 ## [0.2.0] - 2026-07-01
 
 Module 02 (Trend Engine) **complete** — milestone **M2.5: stabilization, finalization & API
@@ -332,7 +368,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.2.0...HEAD
+[Unreleased]: https://example.com/compare/v0.2.1...HEAD
+[0.2.1]: https://example.com/compare/v0.2.0...v0.2.1
 [0.2.0]: https://example.com/compare/v0.1.4...v0.2.0
 [0.1.4]: https://example.com/compare/v0.1.3...v0.1.4
 [0.1.3]: https://example.com/compare/v0.1.2...v0.1.3

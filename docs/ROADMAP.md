@@ -5,7 +5,7 @@ Milestones are executed **in order** and are **never skipped**. Each milestone
 must compile, pass review, and be committed before the next begins
 (see [AGENTS.md](../AGENTS.md), [CONTRIBUTING.md](../CONTRIBUTING.md)).
 
-- **Current version:** `0.2.0` — Module 01 (Core) + Module 02 (Trend Engine) complete.
+- **Current version:** `0.2.1` — Module 03 (Momentum Engine) in progress (M3.1: types & config).
 - **Versioning:** [Semantic Versioning](https://semver.org/). See the
   [Semantic Versioning Policy](#semantic-versioning-policy) for bump rules.
 
@@ -58,8 +58,12 @@ is consistent.
 | `0.1.2` | M2.2 — Trend: types, inputs, config | Trend enums/UDTs (`TrendState`, `TrendMemory`), `Config.trend`, validation. |
 | `0.1.3` | M2.3 — Trend: chart-timeframe model | Chart-TF direction/strength (replaceable formulas), `trendEvaluate`, accessors. |
 | `0.1.4` | M2.4 — Trend: multi-timeframe synthesis | MTF via `ctxHtfValue`, alignment, confidence, quality, phases. |
-| `0.2.0` | M2.5 — Module 02 Trend Engine complete | Integration; Trend API promoted to Stable; `TrendState` ABI locked (ADR-0016). **(current)** |
-| `0.3.0` | M3 — Module 03 Momentum Engine | Momentum / strength assessment. |
+| `0.2.0` | M2.5 — Module 02 Trend Engine complete | Integration; Trend API promoted to Stable; `TrendState` ABI locked (ADR-0016). |
+| `0.2.1` | M3.1 — Momentum: types, inputs, config | Momentum enums/UDTs (`MomentumState`, `MomentumMemory`), `Config.momentum`, validation. **(current)** |
+| `0.2.2` | M3.2 — Momentum: chart-timeframe model | Chart-TF direction/strength/acceleration (replaceable formulas), `momentumEvaluate`, accessors. |
+| `0.2.3` | M3.3 — Momentum: multi-timeframe confirmation | MTF via `ctxHtfValue`, alignment, confidence, quality, trend confirmation. |
+| `0.2.4` | M3.4 — Momentum: diagnostics + stabilization | `momentumSelfCheck`, validation completeness. |
+| `0.3.0` | M3.5 — Module 03 Momentum Engine complete | Integration; Momentum API promoted to Stable; `MomentumState` ABI locked. |
 | `0.4.0` | M4 — Module 04 Support/Resistance | Structural level detection. |
 | `0.5.0` | M5 — Module 05 Market Structure | Swing points, BOS / CHoCH. |
 | `0.6.0` | M6 — Module 06 Liquidity | Liquidity pools / sweeps. |

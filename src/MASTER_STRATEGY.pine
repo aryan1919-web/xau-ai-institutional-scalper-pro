@@ -10,23 +10,24 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.2.0  (Module 02 · M2.5 — Trend Engine complete)
+//  Version      : 0.2.1  (Module 03 · M3.1 — Momentum types & configuration)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
 //  STATUS       : Module 01 (Core Framework) frozen at v0.1.0. Module 02 (Trend
-//                 Engine) COMPLETE at v0.2.0. M2.5 finalizes the module:
-//                   - public Trend API promoted to @stable and FROZEN; the
-//                     TrendState ABI is locked (ADR-0016).
-//                   - debug-only trendSelfCheck asserts the TrendState ABI
-//                     invariants each bar (diagnostics; read-only).
-//                   - config-consistency validation added (TREND-CFG-004:
-//                     flatThreshold <= strengthThreshold).
-//                 trendEvaluate() remains the sole producer of TrendState and the
-//                 sole toucher of trendMemory (R8/R10). ctxHtfValue is invoked at
-//                 exactly ONE call site; request.security lives inside ctxHtfValue
-//                 only (count = 1). NO signals/entries/exits/orders, no plots,
-//                 no alerts — the trend is computed but never acted upon.
+//                 Engine) COMPLETE and FROZEN at v0.2.0 (ADR-0016). Module 03
+//                 (Momentum Engine) in progress. M3.1 adds the DATA MODEL +
+//                 CONFIGURATION only — no momentum logic:
+//                   - enums MomentumStrength / MomentumPhase; types MomentumConfig,
+//                     MomentumState (ABI), MomentumMemory, MomentumTimeframeView.
+//                   - Config.momentum + KernelState.momentumMemory (declared, not
+//                     yet used); inputs read only by cfgBuild; validation
+//                     MOM-CFG-001..005 centralized in cfgValidate.
+//                 NO momentumEvaluate, no helpers, no ta.*, no ctxHtfValue call,
+//                 no Trend interaction, no accessors, no MAIN wiring. request.security
+//                 stays inside ctxHtfValue only (count = 1); the single existing
+//                 ctxHtfValue call site (Trend) is unchanged. NO signals/entries/
+//                 exits/orders, no plots, no alerts.
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -73,7 +74,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.2.0"
+const string PROJECT_VERSION = "0.2.1"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -128,6 +129,13 @@ const string ERR_TREND_HTF_NOT_HIGHER  = "TREND-CFG-001" // HTF < chart timefram
 const string ERR_TREND_FAST_GE_SLOW    = "TREND-CFG-002" // fast length >= slow length
 const string ERR_TREND_THRESHOLD_RANGE = "TREND-CFG-003" // threshold out of [0, 1]
 const string ERR_TREND_THRESHOLD_ORDER = "TREND-CFG-004" // flatThreshold > strengthThreshold (bands unordered)
+
+// -- Momentum Engine (Module 03) error IDs.
+const string ERR_MOM_HTF_NOT_HIGHER    = "MOM-CFG-001"   // HTF < chart timeframe (checked when MTF on)
+const string ERR_MOM_FAST_GE_SLOW      = "MOM-CFG-002"   // fast length >= slow length
+const string ERR_MOM_THRESHOLD_RANGE   = "MOM-CFG-003"   // threshold out of [0, 1]
+const string ERR_MOM_THRESHOLD_ORDER   = "MOM-CFG-004"   // flatThreshold > strengthThreshold (bands unordered)
+const string ERR_MOM_ACCEL_RANGE       = "MOM-CFG-005"   // accelLength < 1 (clamped)
 
 // -- Input group titles (kept as constants to avoid duplicated string literals).
 const string G_01_CORE       = "01 · Core Framework"
@@ -198,6 +206,21 @@ enum TrendPhase
     established
     weakening
     reversing
+
+// MomentumStrength — normalized discrete strength band (Module 03, Momentum Engine).
+enum MomentumStrength
+    flat
+    weak
+    moderate
+    strong
+
+// MomentumPhase — momentum lifecycle / acceleration state (Module 03, Momentum Engine).
+enum MomentumPhase
+    neutral
+    accelerating
+    sustained
+    decelerating
+    exhausted
 
 
 // =============================================================================
@@ -302,6 +325,63 @@ type TrendTimeframeView
     TimeframeClass tf        = TimeframeClass.other
     bool           valid     = false
 
+// -- Module 03 · Momentum Engine — shared types (M3.1). Data model only; no logic.
+//    Declared before Config/KernelState because those nest MomentumConfig/MomentumMemory.
+//    Momentum depends only on Core + Trend and never mutates TrendState.
+
+// MomentumConfig — momentum configuration snapshot (nested as Config.momentum). Owned
+// by `cfg`; populated by cfgBuild. Configuration values only, no runtime state.
+type MomentumConfig
+    bool   enabled               = false
+    bool   useMtf                = false
+    string htfTimeframe          = ""
+    int    fastLength            = 8     // formula-agnostic fast lookback (must be < slowLength)
+    int    slowLength            = 21    // formula-agnostic slow lookback (must be > fastLength)
+    int    accelLength           = 3     // acceleration delta lookback (must be >= 1)
+    float  flatThreshold         = 0.2   // normalized strength below which momentum is flat
+    float  strengthThreshold     = 0.5   // normalized strength at/above which momentum is active
+    int    confirmBars           = 1     // bars to confirm a momentum transition
+    bool   requireTrendAlignment = false // if true, isActive also requires momentum to confirm trend
+
+// MomentumState — immutable per-bar momentum snapshot; the public ABI. Formula-agnostic:
+// normalized outputs only, no implementation values. Produced only by momentumEvaluate
+// (later milestones); a per-bar snapshot. `trendAligned` records agreement with the
+// read-only TrendState (Trend remains the single source of truth for trend direction).
+type MomentumState
+    Direction        direction    = Direction.flat
+    MomentumStrength strengthBand = MomentumStrength.flat
+    float            strength     = 0.0
+    float            acceleration = 0.0
+    float            confidence   = 0.0
+    float            quality      = 0.0
+    MomentumPhase    phase        = MomentumPhase.neutral
+    bool             aligned      = false   // chart vs HTF momentum agreement
+    bool             trendAligned = false   // momentum agrees with TrendState.direction
+    bool             isActive     = false
+    int              barIndex     = 0
+
+// MomentumMemory — minimal cross-bar momentum memory (metadata only; nested as
+// KernelState.momentumMemory). No calculations, no detection. Read/written only by
+// momentumEvaluate. Holds PREVIOUS-bar values, never current MomentumState.
+type MomentumMemory
+    Direction     previousDirection    = Direction.flat
+    MomentumPhase previousPhase        = MomentumPhase.neutral
+    float         previousStrength     = 0.0
+    float         previousAcceleration = 0.0
+    int           barsInMomentum       = 0
+    int           reversalCounter      = 0
+    int           transitionCounter    = 0
+
+// MomentumTimeframeView — one timeframe's normalized momentum read (internal). Used by
+// the momentum helpers to combine chart + HTF views; never exposed downstream and holds
+// no raw indicator values. Kept SEPARATE from TrendTimeframeView by design (distinct
+// ownership; expected to diverge — momentum may carry acceleration later).
+type MomentumTimeframeView
+    Direction      direction = Direction.flat
+    float          strength  = 0.0
+    TimeframeClass tf        = TimeframeClass.other
+    bool           valid     = false
+
 // Config — immutable, validated configuration snapshot. Owned by `cfg`; built
 // once and read via cfgGet(). Trading parameters are added by their modules.
 type Config
@@ -330,6 +410,8 @@ type Config
     bool           enableOptimize     = false
     // Module 02 — Trend Engine configuration (nested; built by cfgBuild).
     TrendConfig    trend
+    // Module 03 — Momentum Engine configuration (nested; built by cfgBuild).
+    MomentumConfig momentum
 
 // KernelState — the single persistent (var) object; the sole mutable global
 // (docs/DECISIONS.md ADR-0009). Owned by `state`; created on the first bar.
@@ -343,6 +425,8 @@ type KernelState
     bool             errorLatched          = false
     // Module 02 — Trend Engine cross-bar memory (touched only by trendEvaluate, R10).
     TrendMemory      trendMemory
+    // Module 03 — Momentum Engine cross-bar memory (touched only by momentumEvaluate).
+    MomentumMemory   momentumMemory
 
 
 // =============================================================================
@@ -364,7 +448,7 @@ int      inpDiagBufferCap      = input.int(DIAG_BUFFER_CAP, "Diagnostics buffer 
 // -- Module enable toggles. ---------------------------------------------------
 bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.1.0.")
 bool inpEnableTrend      = input.bool(false, "Enable Trend Engine", group = G_02_TREND, tooltip = "Master enable for the Trend Engine (Module 02). The trend is computed but not yet acted upon (no signals/orders until later modules).")
-bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.1.0.")
+bool inpEnableMomentum   = input.bool(false, "Enable Momentum Engine", group = G_03_MOMENTUM, tooltip = "Master enable for the Momentum Engine (Module 03). Configuration only in v0.2.1; momentum logic arrives in M3.2+.")
 bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.1.0.")
 bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.1.0.")
 bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.1.0.")
@@ -385,6 +469,17 @@ int    inpTrendSlowLength        = input.int(50, "Slow length", minval = 2, grou
 float  inpTrendFlatThreshold     = input.float(0.2, "Flat threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_02_TREND, tooltip = "Normalized strength below which the trend is flat.")
 float  inpTrendStrengthThreshold = input.float(0.5, "Strength threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_02_TREND, tooltip = "Normalized strength at/above which the trend is active.")
 int    inpTrendConfirmBars       = input.int(1, "Confirmation bars", minval = 1, group = G_02_TREND, tooltip = "Bars required to confirm a trend transition (used in M2.3+).")
+
+// -- Momentum Engine (Module 03) configuration inputs (consumed only by cfgBuild).
+bool   inpMomentumUseMtf            = input.bool(false, "Use HTF confirmation", group = G_03_MOMENTUM, tooltip = "Confirm the chart-timeframe momentum against a higher timeframe (used in M3.3+).")
+string inpMomentumHtf               = input.timeframe("5", "HTF timeframe", group = G_03_MOMENTUM, tooltip = "Higher timeframe for confirmation (must be >= chart timeframe). Read non-repainting via Core's ctxHtfValue.")
+int    inpMomentumFastLength        = input.int(8, "Fast length", minval = 1, group = G_03_MOMENTUM, tooltip = "Fast momentum lookback length (formula-agnostic; must be < slow).")
+int    inpMomentumSlowLength        = input.int(21, "Slow length", minval = 2, group = G_03_MOMENTUM, tooltip = "Slow momentum lookback length (formula-agnostic; must be > fast).")
+int    inpMomentumAccelLength       = input.int(3, "Acceleration length", minval = 1, group = G_03_MOMENTUM, tooltip = "Lookback for the momentum acceleration delta (used in M3.2+).")
+float  inpMomentumFlatThreshold     = input.float(0.2, "Flat threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_03_MOMENTUM, tooltip = "Normalized strength below which momentum is flat.")
+float  inpMomentumStrengthThreshold = input.float(0.5, "Strength threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_03_MOMENTUM, tooltip = "Normalized strength at/above which momentum is active.")
+int    inpMomentumConfirmBars       = input.int(1, "Confirmation bars", minval = 1, group = G_03_MOMENTUM, tooltip = "Bars required to confirm a momentum transition (used in M3.2+).")
+bool   inpMomentumRequireTrendAlign = input.bool(false, "Require trend alignment", group = G_03_MOMENTUM, tooltip = "If enabled, momentum is only active when it confirms the trend direction (used in M3.3+).")
 
 
 // =============================================================================
@@ -657,6 +752,34 @@ cfgValidate(Config draft) =>
         if draft.trend.flatThreshold > draft.trend.strengthThreshold
             array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_TREND_THRESHOLD_ORDER, "trend flatThreshold > strengthThreshold; clamped to strengthThreshold"))
             draft.trend.flatThreshold := draft.trend.strengthThreshold
+    // Module 03 — Momentum Engine config validation (config only; no momentum logic).
+    //   Mirrors the Trend block; centralized here (no separate momentum validator).
+    if not na(draft.momentum)
+        // Fatal: fast lookback must be below slow lookback.
+        if draft.momentum.fastLength >= draft.momentum.slowLength
+            array.push(results, ValidationResult.new(ValidationSeverity.fatal, ERR_MOM_FAST_GE_SLOW, "momentum fast length must be less than slow length"))
+        // Fatal: when MTF confirmation is on, the HTF must be >= the chart timeframe
+        // (a lower "higher" timeframe is a misconfiguration). MOM-CFG-001.
+        if draft.momentum.useMtf and timeframe.in_seconds(draft.momentum.htfTimeframe) < timeframe.in_seconds()
+            array.push(results, ValidationResult.new(ValidationSeverity.fatal, ERR_MOM_HTF_NOT_HIGHER, "momentum HTF timeframe must be >= the chart timeframe"))
+        // Recoverable: clamp normalized thresholds into [0, 1].
+        float clampedMomFlat = utilClamp(draft.momentum.flatThreshold, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+        if clampedMomFlat != draft.momentum.flatThreshold
+            array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_MOM_THRESHOLD_RANGE, "momentum flatThreshold out of [0,1]; clamped"))
+            draft.momentum.flatThreshold := clampedMomFlat
+        float clampedMomStrength = utilClamp(draft.momentum.strengthThreshold, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+        if clampedMomStrength != draft.momentum.strengthThreshold
+            array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_MOM_THRESHOLD_RANGE, "momentum strengthThreshold out of [0,1]; clamped"))
+            draft.momentum.strengthThreshold := clampedMomStrength
+        // Recoverable: the flat band must not exceed the active threshold, else the
+        // strength bands are unordered. Clamp flatThreshold down to strengthThreshold.
+        if draft.momentum.flatThreshold > draft.momentum.strengthThreshold
+            array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_MOM_THRESHOLD_ORDER, "momentum flatThreshold > strengthThreshold; clamped to strengthThreshold"))
+            draft.momentum.flatThreshold := draft.momentum.strengthThreshold
+        // Recoverable: the acceleration lookback must be at least 1 bar. MOM-CFG-005.
+        if draft.momentum.accelLength < 1
+            array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_MOM_ACCEL_RANGE, "momentum accelLength < 1; clamped to 1"))
+            draft.momentum.accelLength := 1
     results
 
 // cfgBuild(diag)   @experimental
@@ -701,6 +824,18 @@ cfgBuild(Diagnostics diag) =>
     draft.trend.flatThreshold     := inpTrendFlatThreshold
     draft.trend.strengthThreshold := inpTrendStrengthThreshold
     draft.trend.confirmBars       := inpTrendConfirmBars
+    // Module 03 — Momentum Engine configuration snapshot.
+    draft.momentum := MomentumConfig.new()
+    draft.momentum.enabled               := inpEnableMomentum
+    draft.momentum.useMtf                := inpMomentumUseMtf
+    draft.momentum.htfTimeframe          := inpMomentumHtf
+    draft.momentum.fastLength            := inpMomentumFastLength
+    draft.momentum.slowLength            := inpMomentumSlowLength
+    draft.momentum.accelLength           := inpMomentumAccelLength
+    draft.momentum.flatThreshold         := inpMomentumFlatThreshold
+    draft.momentum.strengthThreshold     := inpMomentumStrengthThreshold
+    draft.momentum.confirmBars           := inpMomentumConfirmBars
+    draft.momentum.requireTrendAlignment := inpMomentumRequireTrendAlign
     array<ValidationResult> results = cfgValidate(draft)
     errApplyValidation(diag, results, draft.logThreshold, draft.debugEnabled)
     draft
@@ -1127,4 +1262,15 @@ if cfgGet(coreState).debugEnabled
 //
 //  Module 02 (Trend Engine) is COMPLETE at v0.2.0. The public Trend API and the
 //  TrendState ABI are FROZEN (ADR-0016); see docs/ROADMAP.md for the timeline.
+// =============================================================================
+
+
+// =============================================================================
+//  MODULE 03 — MILESTONE PROGRESS (Momentum Engine)
+// -----------------------------------------------------------------------------
+//    [x] M3.1  Momentum types, inputs, configuration            (v0.2.1, current)
+//    [ ] M3.2  Chart-timeframe momentum model                   (v0.2.2)
+//    [ ] M3.3  Multi-timeframe confirmation                     (v0.2.3)
+//    [ ] M3.4  Diagnostics + stabilization                      (v0.2.4)
+//    [ ] M3.5  Integration + finalize (Momentum API -> Stable)  (v0.3.0)
 // =============================================================================

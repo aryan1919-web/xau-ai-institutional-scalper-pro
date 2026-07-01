@@ -5,7 +5,7 @@ document grows alongside the code: every public function must be listed here wit
 its responsibility, parameters, return value, and notes (see
 [STYLE_GUIDE.md](STYLE_GUIDE.md) for documentation rules).
 
-- **Status:** Module 01 frozen (`v0.1.0`). Module 02 complete — `v0.2.0` (Trend API + `TrendState` ABI frozen, ADR-0016).
+- **Status:** Module 01 frozen (`v0.1.0`). Module 02 complete — `v0.2.0` (frozen, ADR-0016). Module 03 in progress — `v0.2.1` (M3.1: momentum types & config).
 - **Scope:** Only functions intended for reuse across modules are "public" and
   documented here. Private, single-use helpers are documented inline.
 
@@ -245,10 +245,42 @@ fields; it does **not** forbid additive accessors over frozen fields. No other f
 (Modules 03–14) requires a new public Trend function — the eight-function API is otherwise
 sufficient.
 
+## Module 03 — Momentum Engine
+
+Data model + configuration implemented (M3.1, `v0.2.1`); **no momentum logic yet**. The `momentum*`
+public API (producer + accessors) arrives in M3.2+ and is not yet present. Momentum depends only on
+Core (Module 01) and Trend (Module 02, consumed **read-only**); it never mutates `TrendState`.
+
+### Enums (Since 0.2.1)
+
+| Enum | Members |
+|------|---------|
+| `MomentumStrength` | `flat`, `weak`, `moderate`, `strong` (normalized strength band) |
+| `MomentumPhase` | `neutral`, `accelerating`, `sustained`, `decelerating`, `exhausted` |
+
+### Types (Since 0.2.1)
+
+| Type | Role |
+|------|------|
+| `MomentumConfig` | Momentum configuration snapshot, nested as `Config.momentum` (built by `cfgBuild`). Config values only. |
+| `MomentumState` | Immutable per-bar momentum snapshot (the ABI): `direction:Direction`, `strengthBand:MomentumStrength`, `strength/acceleration/confidence/quality:float(0..1)`, `phase:MomentumPhase`, `aligned:bool` (chart/HTF), `trendAligned:bool` (vs Trend), `isActive:bool`, `barIndex:int`. Formula-agnostic (no implementation values). Produced only by `momentumEvaluate` (M3.2+). |
+| `MomentumMemory` | Minimal cross-bar memory, nested as `KernelState.momentumMemory` (declared, not yet used): `previousDirection`, `previousPhase`, `previousStrength`, `previousAcceleration`, `barsInMomentum`, `reversalCounter`, `transitionCounter`. |
+| `MomentumTimeframeView` | Internal transport only (never public); kept **separate** from `TrendTimeframeView` by design. |
+
+### Configuration & validation
+- **Inputs** (group *03 · Momentum Engine*, read only by `cfgBuild`): `inpEnableMomentum`,
+  `inpMomentumUseMtf`, `inpMomentumHtf`, `inpMomentumFastLength`, `inpMomentumSlowLength`,
+  `inpMomentumAccelLength`, `inpMomentumFlatThreshold`, `inpMomentumStrengthThreshold`,
+  `inpMomentumConfirmBars`, `inpMomentumRequireTrendAlign`.
+- **Validation** (centralized in `cfgValidate`; returns `ValidationResult` only): `MOM-CFG-001` HTF
+  < chart when MTF on (fatal); `MOM-CFG-002` fast ≥ slow (fatal); `MOM-CFG-003` threshold out of
+  `[0,1]` (recoverable); `MOM-CFG-004` flatThreshold > strengthThreshold (recoverable); `MOM-CFG-005`
+  accelLength < 1 (recoverable clamp).
+
 ## Other module public functions
 
 Populated as each subsequent module is implemented, grouped by module.
 
 | Module | Function | Since | Summary |
 |--------|----------|-------|---------|
-| 03–14 | — | — | Not yet designed. |
+| 04–14 | — | — | Not yet designed. |
