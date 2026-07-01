@@ -105,9 +105,10 @@ state is exposed through `BarContext.session` (built by the internal `ctxCompute
 so a separate public `ctxSessionState` is not needed.
 
 **Internal helpers (not cross-module callable):** `utilMinutesOfDay`, `utilFormatFloat`,
-`logLevelRank`, `logShouldEmit`, `logFormat`, `errFormat` (M1.2); `cfgValidate`,
-`ctxComputeSession`, `ctxTimeframe` (M1.3). `logLevelRank` is a single-source severity
-ranking that keeps `logShouldEmit` free of duplicated `switch` logic (no-duplication rule).
+`logInitBuffer`, `logLevelRank`, `logShouldEmit`, `logFormat`, `errFormat`; `cfgValidate`,
+`ctxComputeSession`, `ctxTimeframe`; `stateGet`, `stateReset` (debug). `logLevelRank` is a
+single-source severity ranking, and `logInitBuffer` a single-source ring-buffer allocator,
+that keep the public functions free of duplicated logic (no-duplication rule).
 
 ### Implemented — kernel state (`state`) · Since 0.1.0
 

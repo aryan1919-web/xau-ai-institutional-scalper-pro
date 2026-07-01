@@ -189,13 +189,13 @@ enum ValidationSeverity
 type LogEntry
     LogLevel level     = LogLevel.info
     int      barIndex  = 0
-    int      time      = 0
+    int      barTime   = 0
     string   moduleId  = ""
     string   errorId   = ""
     string   message   = ""
 
 // Diagnostics — bounded ring buffer of LogEntry plus counters. Owned by `log`;
-// lives inside KernelState (persistent). `entries` is allocated in M1.2.
+// lives inside KernelState (persistent). `entries` is allocated on first use.
 type Diagnostics
     array<LogEntry> entries
     int             head         = 0
@@ -216,7 +216,7 @@ type SessionContext
 // BarContext — per-bar computed context (transient). Owned by `ctx`.
 type BarContext
     int              barIndex    = 0
-    int              time        = 0
+    int              barTime     = 0
     bool             isConfirmed = false
     bool             isNewBar    = false
     SessionContext   session
@@ -239,7 +239,7 @@ type Config
     int            sessionStartMinute = 0     // minute of day (exchange tz)
     int            sessionEndMinute   = 0     // minute of day (exchange tz)
     int            diagBufferCap      = DIAG_BUFFER_CAP
-    // Module enable toggles (mirror of the inputs; consumed by cfgBuild in M1.3).
+    // Module enable toggles (mirror of the inputs; consumed by cfgBuild).
     bool           enableCore         = false
     bool           enableTrend        = false
     bool           enableMomentum     = false
@@ -270,9 +270,8 @@ type KernelState
 // =============================================================================
 //  INPUTS
 // -----------------------------------------------------------------------------
-//  All inputs are read ONLY by cfgBuild (ADR-0008), which is not yet invoked
-//  (no lifecycle until M1.4), so they have no runtime effect this build.
-//  Configuration is intentionally separated from logic.
+//  All inputs are read ONLY by cfgBuild (ADR-0008), which packs them into the
+//  immutable Config snapshot. Configuration is intentionally separated from logic.
 // =============================================================================
 
 // -- Core configuration inputs (consumed only by cfgBuild). -------------------
@@ -302,11 +301,12 @@ bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", grou
 
 
 // =============================================================================
-//  CORE SUBSYSTEM SCAFFOLDING
+//  CORE FRAMEWORK SUBSYSTEMS
 // -----------------------------------------------------------------------------
-//  Empty, bannered sections for the Core Framework subsystems, in dependency
-//  order. No functions exist yet — each subsystem is implemented in a later
-//  milestone. These banners fix the canonical section ordering (STYLE_GUIDE §8).
+//  The Core Framework, in dependency order (leaf -> composite):
+//    util -> log -> err -> cfg -> ctx -> state -> lifecycle
+//  Section ordering is canonical (STYLE_GUIDE §8). Foundation only — no trading
+//  logic anywhere in this file.
 // =============================================================================
 
 // -----------------------------------------------------------------------------
@@ -371,9 +371,9 @@ utilFormatFloat(float value, int precision) =>
         str.tostring(math.round(value * factor) / factor)
 
 // -----------------------------------------------------------------------------
-//  Core · log — bounded diagnostics ring buffer (M1.2).
+//  Core · log — bounded diagnostics ring buffer.
 //  O(1) insertion. Gated by level + debug. Operates on a caller-owned
-//  Diagnostics handle (KernelState wiring arrives in M1.4).
+//  Diagnostics handle (KernelState.diag in the wired lifecycle).
 // -----------------------------------------------------------------------------
 
 // logLevelRank(level)   @internal
@@ -389,6 +389,18 @@ logLevelRank(LogLevel level) =>
         LogLevel.info  => 2
         LogLevel.debug => 3
         => 3
+
+// logInitBuffer(diag, capacity)   @internal
+//   Responsibility : Allocate the fixed-capacity ring buffer and reset counters.
+//                    Single source of buffer initialization (no-duplication rule).
+//   Parameters     : diag — Diagnostics to initialize; capacity — buffer size.
+//   Returns        : void.  Determinism: deterministic.  Errors: none.
+logInitBuffer(Diagnostics diag, int capacity) =>
+    diag.entries      := array.new<LogEntry>(capacity)
+    diag.capacity     := capacity
+    diag.head         := 0
+    diag.count        := 0
+    diag.droppedCount := 0
 
 // logShouldEmit(level, threshold, debugEnabled)   @internal
 //   Responsibility : Decide whether a message at `level` is emitted, given the
@@ -422,11 +434,7 @@ logFormat(LogEntry entry) =>
 logWrite(Diagnostics diag, LogLevel level, string moduleId, string errorId, string message, LogLevel threshold, bool debugEnabled) =>
     if logShouldEmit(level, threshold, debugEnabled)
         if na(diag.entries)
-            diag.entries      := array.new<LogEntry>(DIAG_BUFFER_CAP)
-            diag.capacity     := DIAG_BUFFER_CAP
-            diag.head         := 0
-            diag.count        := 0
-            diag.droppedCount := 0
+            logInitBuffer(diag, DIAG_BUFFER_CAP)
         LogEntry entry = LogEntry.new(level, bar_index, time, moduleId, errorId, message)
         array.set(diag.entries, diag.head, entry)
         diag.head := (diag.head + 1) % diag.capacity
@@ -502,8 +510,9 @@ errAssert(bool condition, string errorId, string message, bool debugEnabled) =>
 //   Returns        : void.  Determinism: deterministic. Complexity O(size(results)).
 //   Errors         : raises runtime.error on the first fatal result.
 errApplyValidation(Diagnostics diag, array<ValidationResult> results, LogLevel threshold, bool debugEnabled) =>
-    if not na(results)
-        int n = array.size(results)
+    int n = na(results) ? 0 : array.size(results)
+    // Guard the range: `for 0 to n-1` with n == 0 must not iterate.
+    if n > 0
         for i = 0 to n - 1
             ValidationResult r = array.get(results, i)
             if r.severity == ValidationSeverity.fatal
@@ -543,8 +552,8 @@ cfgValidate(Config draft) =>
 //   Returns        : Config — immutable after this call (by convention).
 //   Determinism    : deterministic per run.
 //   Errors         : fatal — halts via errApplyValidation on invalid config.
-//   Note           : primaryTfClass is finalized by the lifecycle (M1.4), which
-//                    holds both the built Config and ctxTimeframe().
+//   Note           : primaryTfClass is finalized in stateInit, which holds both
+//                    the built Config and ctxTimeframe().
 cfgBuild(Diagnostics diag) =>
     Config draft = Config.new()
     draft.debugEnabled       := inpDebugEnabled
@@ -577,8 +586,8 @@ cfgBuild(Diagnostics diag) =>
 //   Parameters     : state — KernelState holding the built Config.
 //   Returns        : Config.
 //   Determinism    : pure accessor.  Errors: none.
-//   Note           : takes the KernelState handle until the lifecycle (M1.4)
-//                    provides a parameter-less form.
+//   Note           : takes the KernelState handle by design — the single global
+//                    lives in MAIN and is passed to functions by reference.
 cfgGet(KernelState state) =>
     state.config
 
@@ -651,11 +660,7 @@ stateInit(Config config, Diagnostics diag) =>
     KernelState state = KernelState.new()
     state.config := config
     if na(diag.entries)
-        diag.entries      := array.new<LogEntry>(config.diagBufferCap)
-        diag.capacity     := config.diagBufferCap
-        diag.head         := 0
-        diag.count        := 0
-        diag.droppedCount := 0
+        logInitBuffer(diag, config.diagBufferCap)
     state.diag := diag
     state.tf := ctxTimeframe()
     state.config.primaryTfClass := state.tf.tfClass
@@ -771,12 +776,12 @@ BarContext context = coreOnBar(coreState)
 
 
 // =============================================================================
-//  TODO — MODULE 01 MILESTONES
+//  MODULE 01 — MILESTONE HISTORY (COMPLETE)
 // -----------------------------------------------------------------------------
 //    [x] M1.1  Enums, UDTs, constants, subsystem scaffolding   (v0.0.2)
 //    [x] M1.2  util / log / err (validation) subsystems        (v0.0.3)
 //    [x] M1.3  cfg / ctx subsystems                            (v0.0.4)
-//    [x] M1.4  state / lifecycle / diagnostics / integration   (v0.1.0, current)
+//    [x] M1.4  state / lifecycle / diagnostics / integration   (v0.1.0)
 //
 //  Module 01 (Core Framework) is COMPLETE at v0.1.0.
 //  See docs/ROADMAP.md for the authoritative version timeline.

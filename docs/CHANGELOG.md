@@ -33,6 +33,17 @@ integration**. **Module 01 is complete.** Foundation only — still zero trading
   final reference-passing design (no parameter-less `cfgGet`); only `ctxHtfValue` remains reserved.
 - `docs/ROADMAP.md`: current-version marker moved to `0.1.0`.
 
+### Fixed (stabilization before freeze)
+- **`errApplyValidation`**: guarded the results loop with `n > 0` so a clean config
+  (empty results array) never evaluates `for i = 0 to -1` — removes a potential
+  out-of-bounds on the common path.
+- **Duplication**: extracted `logInitBuffer(diag, capacity)`; `logWrite` and `stateInit`
+  now share one ring-buffer allocator (no-duplication rule).
+- **UDT naming**: renamed the `time` field of `LogEntry` and `BarContext` to `barTime`
+  to avoid shadowing the `time` builtin (fields were write-only; no behavior change).
+- Removed obsolete milestone/scaffolding comments; refreshed section banners now that
+  Module 01 is complete.
+
 ### Notes
 - Verification: one `strategy()`; zero entries/exits/orders, `request.security`, `ta.*`, or
   plots. Non-repainting (current-bar builtins only). Single initialization via `var`.
