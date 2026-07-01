@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.2.2] - 2026-07-01
+
+Module 03 (Momentum Engine) — milestone **M3.2: chart-timeframe momentum model**. Momentum now
+computes each bar; no signals/orders/plots/alerts. Chart timeframe only. (The `v0.2.2` git tag is
+created manually after review.)
+
+### Added
+- **`momentumEvaluate(state, context, trend) → MomentumState`** (Experimental): the sole producer of
+  the immutable `MomentumState` and sole reader/updater of `KernelState.momentumMemory`. Consumes
+  `TrendState` **read-only** (via the frozen `trendDirection` accessor). Wired into MAIN after
+  `trendEvaluate` — computed every bar; result unused (seam for later modules).
+- **Pure accessors** (Experimental): `momentumDirection`, `momentumStrength`, `momentumAcceleration`,
+  `momentumConfidence`, `momentumQuality`, `momentumPhase`, `momentumIsActive`, `momentumIsAligned`,
+  `momentumTrendAligned`.
+- **Internal helpers:** `momentumSignedStrength`, `momentumRawAcceleration`, `momentumDecodeSigned`,
+  `momentumChartView`, `momentumClassifyStrength`, `momentumClassifyPhase`, `momentumConfirmsTrendDir`.
+  The chart-TF formula (fast/slow price velocity scaled by ATR, normalized) lives entirely here and
+  is replaceable without changing the ABI; raw indicator values never reach `MomentumState`.
+
+### Changed
+- `PROJECT_VERSION` `0.2.1` → `0.2.2`.
+- MAIN now computes `momentum = momentumEvaluate(coreState, context, trend)` after the trend.
+- `MODULE PLACEHOLDERS` banner now covers modules 04–14 (03 implemented).
+- `docs/ROADMAP.md`: current marker moved to `0.2.2`.
+
+### Notes
+- **Chart timeframe only.** Multi-timeframe confirmation and independent confidence/quality arrive
+  in M3.3. In M3.2 `confidence`/`quality` baseline to `strength` and `aligned` (chart/HTF) is
+  trivially true; `trendAligned` is computed and exposed now but does not yet gate `isActive`.
+- **Acceleration** is the normalized magnitude of momentum change over `accelLength` bars (chart-only,
+  derived from the chart strength history — no recomputation of the formula); its direction is
+  carried by `MomentumPhase`.
+- `ta.mom`/`ta.atr` are used (chart-TF, `@internal`, non-repainting at bar close). No new
+  `request.security`; **no `ctxHtfValue` call is added** — the lone call site (Trend) is unchanged
+  and `request.security` stays inside `ctxHtfValue` (count = 1).
+- **Invariants:** `MomentumState.new()` exists once (in `momentumEvaluate`); `momentumMemory` is
+  touched only by `momentumEvaluate`; `TrendState` is read-only; deterministic; O(1) per bar (no loops).
+- Next: M3.3 (`0.2.3`) — multi-timeframe confirmation + confidence/quality.
+
 ## [0.2.1] - 2026-07-01
 
 Module 03 (Momentum Engine) — milestone **M3.1: shared types & configuration**. Data model and
@@ -368,7 +407,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.2.1...HEAD
+[Unreleased]: https://example.com/compare/v0.2.2...HEAD
+[0.2.2]: https://example.com/compare/v0.2.1...v0.2.2
 [0.2.1]: https://example.com/compare/v0.2.0...v0.2.1
 [0.2.0]: https://example.com/compare/v0.1.4...v0.2.0
 [0.1.4]: https://example.com/compare/v0.1.3...v0.1.4

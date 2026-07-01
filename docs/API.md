@@ -5,7 +5,7 @@ document grows alongside the code: every public function must be listed here wit
 its responsibility, parameters, return value, and notes (see
 [STYLE_GUIDE.md](STYLE_GUIDE.md) for documentation rules).
 
-- **Status:** Module 01 frozen (`v0.1.0`). Module 02 complete — `v0.2.0` (frozen, ADR-0016). Module 03 in progress — `v0.2.1` (M3.1: momentum types & config).
+- **Status:** Module 01 frozen (`v0.1.0`). Module 02 complete — `v0.2.0` (frozen, ADR-0016). Module 03 in progress — `v0.2.2` (M3.2: chart-timeframe momentum model).
 - **Scope:** Only functions intended for reuse across modules are "public" and
   documented here. Private, single-use helpers are documented inline.
 
@@ -247,9 +247,32 @@ sufficient.
 
 ## Module 03 — Momentum Engine
 
-Data model + configuration implemented (M3.1, `v0.2.1`); **no momentum logic yet**. The `momentum*`
-public API (producer + accessors) arrives in M3.2+ and is not yet present. Momentum depends only on
-Core (Module 01) and Trend (Module 02, consumed **read-only**); it never mutates `TrendState`.
+Chart-timeframe momentum model implemented (M3.2, `v0.2.2`); MTF confirmation arrives in M3.3. The
+`momentum*` public API is **Experimental until `v0.3.0`**. `MomentumState` is the immutable per-bar
+ABI; momentum direction reuses Core `Direction`. Momentum depends only on Core (Module 01) and Trend
+(Module 02, consumed **read-only** via `trendDirection`); it never mutates `TrendState`.
+
+### Public API (Since 0.2.2) · Experimental
+
+| Function | Signature | Returns | Role |
+|----------|-----------|---------|------|
+| `momentumEvaluate` | `momentumEvaluate(state, context, trend)` | `MomentumState` | Sole producer of `MomentumState`; sole reader/updater of `KernelState.momentumMemory`. Consumes `TrendState` read-only. Wired in MAIN. |
+| `momentumDirection` | `momentumDirection(ms)` | `Direction` | pure accessor |
+| `momentumStrength` | `momentumStrength(ms)` | `float` 0..1 | pure accessor |
+| `momentumAcceleration` | `momentumAcceleration(ms)` | `float` 0..1 | pure accessor (magnitude of momentum change) |
+| `momentumConfidence` | `momentumConfidence(ms)` | `float` 0..1 | pure accessor |
+| `momentumQuality` | `momentumQuality(ms)` | `float` 0..1 | pure accessor |
+| `momentumPhase` | `momentumPhase(ms)` | `MomentumPhase` | pure accessor |
+| `momentumIsActive` | `momentumIsActive(ms)` | `bool` | pure accessor |
+| `momentumIsAligned` | `momentumIsAligned(ms)` | `bool` | pure accessor (chart/HTF; trivially true until M3.3) |
+| `momentumTrendAligned` | `momentumTrendAligned(ms)` | `bool` | pure accessor (momentum agrees with trend direction) |
+
+**Internal helpers (Since 0.2.2):** `momentumSignedStrength`, `momentumRawAcceleration`,
+`momentumDecodeSigned`, `momentumChartView`, `momentumClassifyStrength`, `momentumClassifyPhase`,
+`momentumConfirmsTrendDir`. The momentum **formula lives entirely in these helpers** (fast/slow
+price velocity scaled by ATR, normalized) and is replaceable without changing `MomentumState`; raw
+indicator values never reach `MomentumState`. No `ctxHtfValue`/`request.security` is used here (chart
+TF only; HTF arrives in M3.3).
 
 ### Enums (Since 0.2.1)
 
@@ -263,8 +286,8 @@ Core (Module 01) and Trend (Module 02, consumed **read-only**); it never mutates
 | Type | Role |
 |------|------|
 | `MomentumConfig` | Momentum configuration snapshot, nested as `Config.momentum` (built by `cfgBuild`). Config values only. |
-| `MomentumState` | Immutable per-bar momentum snapshot (the ABI): `direction:Direction`, `strengthBand:MomentumStrength`, `strength/acceleration/confidence/quality:float(0..1)`, `phase:MomentumPhase`, `aligned:bool` (chart/HTF), `trendAligned:bool` (vs Trend), `isActive:bool`, `barIndex:int`. Formula-agnostic (no implementation values). Produced only by `momentumEvaluate` (M3.2+). |
-| `MomentumMemory` | Minimal cross-bar memory, nested as `KernelState.momentumMemory` (declared, not yet used): `previousDirection`, `previousPhase`, `previousStrength`, `previousAcceleration`, `barsInMomentum`, `reversalCounter`, `transitionCounter`. |
+| `MomentumState` | Immutable per-bar momentum snapshot (the ABI): `direction:Direction`, `strengthBand:MomentumStrength`, `strength/acceleration/confidence/quality:float(0..1)`, `phase:MomentumPhase`, `aligned:bool` (chart/HTF), `trendAligned:bool` (vs Trend), `isActive:bool`, `barIndex:int`. Formula-agnostic (no implementation values). Produced only by `momentumEvaluate`. |
+| `MomentumMemory` | Minimal cross-bar memory, nested as `KernelState.momentumMemory` (read/written only by `momentumEvaluate`): `previousDirection`, `previousPhase`, `previousStrength`, `previousAcceleration`, `barsInMomentum`, `reversalCounter`, `transitionCounter`. |
 | `MomentumTimeframeView` | Internal transport only (never public); kept **separate** from `TrendTimeframeView` by design. |
 
 ### Configuration & validation

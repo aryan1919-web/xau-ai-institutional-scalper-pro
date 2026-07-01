@@ -3,7 +3,7 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** In implementation — M3.1 (`v0.2.1`) done · **Target version:** `0.3.0` · **Depends on:** Module 01 (Core) + Module 02 (Trend, read-only)
+> **Status:** In implementation — M3.1 (`v0.2.1`) + M3.2 (`v0.2.2`) done · **Target version:** `0.3.0` · **Depends on:** Module 01 (Core) + Module 02 (Trend, read-only)
 
 ## Overview
 
@@ -42,6 +42,30 @@ Types + configuration only — no momentum logic yet.
   when MTF on (fatal), `MOM-CFG-002` fast ≥ slow (fatal), `MOM-CFG-003` threshold out of `[0,1]`
   (recoverable), `MOM-CFG-004` flatThreshold > strengthThreshold (recoverable), `MOM-CFG-005`
   accelLength < 1 (recoverable clamp). No separate momentum validator (single source of truth).
+
+## Chart-timeframe model (M3.2, v0.2.2)
+
+- `momentumEvaluate(state, context, trend)` produces the immutable `MomentumState` each bar (wired
+  in MAIN after `trendEvaluate`; result unused — no signals/orders/plots). It is the sole producer
+  of `MomentumState` and the sole reader/updater of `KernelState.momentumMemory` (`momentumMemory`
+  is lazily initialized here).
+- The chart-TF **formula** (fast/slow price velocity via `ta.mom`, scaled by `ta.atr`, normalized to
+  a signed `[-1,1]` scalar) lives entirely in the `@internal` helpers (`momentumSignedStrength`,
+  decoded by `momentumChartView`); it is **replaceable** without changing the ABI. Raw velocity/ATR
+  values never reach `MomentumState`.
+- **Acceleration** (`momentumRawAcceleration`) is the normalized magnitude of change in momentum
+  strength over `accelLength` bars — derived from the chart strength history (no recomputation of
+  the formula). Its direction (accelerating vs decelerating) is carried by `MomentumPhase`.
+- `momentumClassifyStrength` maps strength → band; `momentumClassifyPhase` derives the lifecycle
+  phase (`neutral/accelerating/sustained/decelerating/exhausted`) from current + previous-bar memory
+  (stateless — memory passed as parameters).
+- **Read-only Trend consumption:** `momentumConfirmsTrendDir` reads the trend direction **only**
+  through the frozen `trendDirection()` accessor; `MomentumState.trendAligned` records the agreement.
+  `TrendState` is never mutated. In M3.2 `trendAligned` is exposed but does not yet gate `isActive`.
+- Chart-only baseline: `confidence`/`quality` track `strength` and `aligned` (chart/HTF) is trivially
+  true; multi-timeframe confirmation differentiates them in **M3.3**. No `ctxHtfValue` call yet.
+- Pure accessors: `momentumDirection/Strength/Acceleration/Confidence/Quality/Phase/IsActive/
+  IsAligned/TrendAligned` (Experimental until `v0.3.0`).
 
 ## Design decisions
 

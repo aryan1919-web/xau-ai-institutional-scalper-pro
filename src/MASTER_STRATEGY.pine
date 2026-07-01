@@ -10,24 +10,24 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.2.1  (Module 03 · M3.1 — Momentum types & configuration)
+//  Version      : 0.2.2  (Module 03 · M3.2 — chart-timeframe momentum model)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
 //  STATUS       : Module 01 (Core Framework) frozen at v0.1.0. Module 02 (Trend
 //                 Engine) COMPLETE and FROZEN at v0.2.0 (ADR-0016). Module 03
-//                 (Momentum Engine) in progress. M3.1 adds the DATA MODEL +
-//                 CONFIGURATION only — no momentum logic:
-//                   - enums MomentumStrength / MomentumPhase; types MomentumConfig,
-//                     MomentumState (ABI), MomentumMemory, MomentumTimeframeView.
-//                   - Config.momentum + KernelState.momentumMemory (declared, not
-//                     yet used); inputs read only by cfgBuild; validation
-//                     MOM-CFG-001..005 centralized in cfgValidate.
-//                 NO momentumEvaluate, no helpers, no ta.*, no ctxHtfValue call,
-//                 no Trend interaction, no accessors, no MAIN wiring. request.security
+//                 (Momentum Engine) in progress. M3.2 adds the CHART-TIMEFRAME
+//                 momentum model:
+//                   - one REPLACEABLE signed-strength formula on the chart plus a
+//                     chart-only acceleration (magnitude of change).
+//                   - momentumChartView / classify helpers -> momentumEvaluate,
+//                     the sole producer of MomentumState and sole toucher of
+//                     momentumMemory. Consumes TrendState READ-ONLY (trendAligned).
+//                 Chart TF only; MTF (ctxHtfValue) arrives in M3.3. request.security
 //                 stays inside ctxHtfValue only (count = 1); the single existing
-//                 ctxHtfValue call site (Trend) is unchanged. NO signals/entries/
-//                 exits/orders, no plots, no alerts.
+//                 ctxHtfValue call site (Trend) is unchanged — momentum adds none.
+//                 NO signals/entries/exits/orders, no plots, no alerts, no
+//                 diagnostics/self-check yet — momentum is computed, not acted upon.
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -74,7 +74,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.2.1"
+const string PROJECT_VERSION = "0.2.2"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -448,7 +448,7 @@ int      inpDiagBufferCap      = input.int(DIAG_BUFFER_CAP, "Diagnostics buffer 
 // -- Module enable toggles. ---------------------------------------------------
 bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.1.0.")
 bool inpEnableTrend      = input.bool(false, "Enable Trend Engine", group = G_02_TREND, tooltip = "Master enable for the Trend Engine (Module 02). The trend is computed but not yet acted upon (no signals/orders until later modules).")
-bool inpEnableMomentum   = input.bool(false, "Enable Momentum Engine", group = G_03_MOMENTUM, tooltip = "Master enable for the Momentum Engine (Module 03). Configuration only in v0.2.1; momentum logic arrives in M3.2+.")
+bool inpEnableMomentum   = input.bool(false, "Enable Momentum Engine", group = G_03_MOMENTUM, tooltip = "Master enable for the Momentum Engine (Module 03). The momentum is computed but not yet acted upon (no signals/orders until later modules).")
 bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.1.0.")
 bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.1.0.")
 bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.1.0.")
@@ -475,10 +475,10 @@ bool   inpMomentumUseMtf            = input.bool(false, "Use HTF confirmation", 
 string inpMomentumHtf               = input.timeframe("5", "HTF timeframe", group = G_03_MOMENTUM, tooltip = "Higher timeframe for confirmation (must be >= chart timeframe). Read non-repainting via Core's ctxHtfValue.")
 int    inpMomentumFastLength        = input.int(8, "Fast length", minval = 1, group = G_03_MOMENTUM, tooltip = "Fast momentum lookback length (formula-agnostic; must be < slow).")
 int    inpMomentumSlowLength        = input.int(21, "Slow length", minval = 2, group = G_03_MOMENTUM, tooltip = "Slow momentum lookback length (formula-agnostic; must be > fast).")
-int    inpMomentumAccelLength       = input.int(3, "Acceleration length", minval = 1, group = G_03_MOMENTUM, tooltip = "Lookback for the momentum acceleration delta (used in M3.2+).")
+int    inpMomentumAccelLength       = input.int(3, "Acceleration length", minval = 1, group = G_03_MOMENTUM, tooltip = "Lookback for the momentum acceleration delta (magnitude of change over this many bars).")
 float  inpMomentumFlatThreshold     = input.float(0.2, "Flat threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_03_MOMENTUM, tooltip = "Normalized strength below which momentum is flat.")
 float  inpMomentumStrengthThreshold = input.float(0.5, "Strength threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_03_MOMENTUM, tooltip = "Normalized strength at/above which momentum is active.")
-int    inpMomentumConfirmBars       = input.int(1, "Confirmation bars", minval = 1, group = G_03_MOMENTUM, tooltip = "Bars required to confirm a momentum transition (used in M3.2+).")
+int    inpMomentumConfirmBars       = input.int(1, "Confirmation bars", minval = 1, group = G_03_MOMENTUM, tooltip = "Bars required to confirm a momentum transition (sustained phase).")
 bool   inpMomentumRequireTrendAlign = input.bool(false, "Require trend alignment", group = G_03_MOMENTUM, tooltip = "If enabled, momentum is only active when it confirms the trend direction (used in M3.3+).")
 
 
@@ -1205,15 +1205,165 @@ trendSelfCheck(TrendState ts, TrendConfig tcfg) =>
 
 
 // =============================================================================
-//  MODULE PLACEHOLDERS (03 – 14)
+//  MODULE 03 — MOMENTUM ENGINE (chart-timeframe model, M3.2)
+// -----------------------------------------------------------------------------
+//  Produces the immutable MomentumState (the ABI). Chart timeframe only; MTF is
+//  added in M3.3. The momentum FORMULA lives entirely in the @internal helpers
+//  and is replaceable without changing MomentumState. Consumes TrendState
+//  READ-ONLY (via the frozen trendDirection accessor); never mutates it. No
+//  signals, orders, plots, or alerts. momentumEvaluate is the sole producer of
+//  MomentumState and the sole reader/updater of KernelState.momentumMemory.
+//  ctxHtfValue is NOT called here in M3.2 (chart TF only).
+// =============================================================================
+
+// momentumSignedStrength(mcfg)   @internal
+//   Responsibility : Evaluate the REPLACEABLE momentum formula on the CURRENT
+//                    series, returning a single signed, normalized scalar in
+//                    [-1, 1] (sign = direction, magnitude = strength). One scalar
+//                    so the same expression can be read on the chart directly and
+//                    on the HTF via a SINGLE ctxHtfValue call (M3.3; budget = 1).
+//   Parameters     : mcfg — MomentumConfig.
+//   Returns        : float in [-1, 1] (0 when the read is invalid / flat).
+//   Determinism    : deterministic; non-repainting (bar close).
+//   Note           : Raw velocity/ATR values stay local; never exposed.
+momentumSignedStrength(MomentumConfig mcfg) =>
+    float velFast = ta.mom(close, mcfg.fastLength)   // fast-horizon price velocity
+    float velSlow = ta.mom(close, mcfg.slowLength)   // slow-horizon price velocity
+    float atr     = ta.atr(mcfg.slowLength)
+    bool  valid   = utilIsValidNumber(velFast) and utilIsValidNumber(velSlow) and utilIsValidNumber(atr) and atr > 0
+    float blended = math.avg(velFast, velSlow)
+    float strength = not valid ? UTIL_NORMALIZED_MIN : utilClamp(math.abs(utilSafeDiv(blended, atr, UTIL_NORMALIZED_MIN)), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+    not valid ? UTIL_NORMALIZED_MIN : math.sign(blended) * strength
+
+// momentumRawAcceleration(strengthNow, accelLength)   @internal
+//   Responsibility : Normalized [0, 1] rate-of-change of the momentum MAGNITUDE
+//                    over accelLength bars. Chart-only; na-safe on early bars.
+//                    The SIGN of the change (accelerating vs decelerating) is
+//                    carried by MomentumPhase, not by this magnitude.
+//   Parameters     : strengthNow — current chart momentum strength [0,1];
+//                    accelLength — lookback for the delta.
+//   Returns        : float in [0, 1] (0 when history is unavailable).
+//   Determinism    : deterministic; non-repainting. No recomputation of the
+//                    formula (derives from the already-computed chart strength).
+momentumRawAcceleration(float strengthNow, int accelLength) =>
+    float prev = strengthNow[accelLength]
+    utilIsValidNumber(strengthNow) and utilIsValidNumber(prev) ? utilClamp(math.abs(strengthNow - prev), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX) : UTIL_NORMALIZED_MIN
+
+// momentumDecodeSigned(signed, tf)   @internal
+//   Responsibility : Decode a signed-strength scalar into a normalized
+//                    MomentumTimeframeView (direction + magnitude), tagged with
+//                    the timeframe class. Shared by chart and (later) HTF reads.
+//   Parameters     : signed — signed strength in [-1, 1]; tf — TimeframeClass.
+//   Returns        : MomentumTimeframeView.  Determinism: pure (na-safe).
+momentumDecodeSigned(float signed, TimeframeClass tf) =>
+    bool valid = utilIsValidNumber(signed)
+    Direction dir = not valid ? Direction.flat : signed > 0 ? Direction.long : signed < 0 ? Direction.short : Direction.flat
+    float strength = not valid ? UTIL_NORMALIZED_MIN : utilClamp(math.abs(signed), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+    MomentumTimeframeView.new(dir, strength, tf, valid)
+
+// momentumChartView(mcfg)   @internal
+//   Responsibility : Compute the CHART-timeframe momentum view (normalized) by
+//                    decoding the signed formula evaluated on the chart series.
+//   Parameters     : mcfg — MomentumConfig.
+//   Returns        : MomentumTimeframeView (direction + strength in [0, 1]).
+//   Determinism    : deterministic; non-repainting (chart-TF, bar close).
+momentumChartView(MomentumConfig mcfg) =>
+    momentumDecodeSigned(momentumSignedStrength(mcfg), ctxTimeframe().tfClass)
+
+// momentumClassifyStrength(strength, mcfg)   @internal
+//   Responsibility : Map a normalized strength to a discrete band.
+//   Returns        : MomentumStrength.  Determinism: pure.  Errors: none.
+momentumClassifyStrength(float strength, MomentumConfig mcfg) =>
+    float strongBoundary = math.avg(mcfg.strengthThreshold, UTIL_NORMALIZED_MAX)
+    strength < mcfg.flatThreshold ? MomentumStrength.flat : strength < mcfg.strengthThreshold ? MomentumStrength.weak : strength < strongBoundary ? MomentumStrength.moderate : MomentumStrength.strong
+
+// momentumClassifyPhase(curDir, curStrength, curAccel, prevDir, prevStrength, barsInMomentum, mcfg)   @internal
+//   Responsibility : Classify the momentum lifecycle phase from current + previous
+//                    (memory) values. Stateless — memory is passed in.
+//   Returns        : MomentumPhase.  Determinism: pure.  Errors: none.
+momentumClassifyPhase(Direction curDir, float curStrength, float curAccel, Direction prevDir, float prevStrength, int barsInMomentum, MomentumConfig mcfg) =>
+    curDir == Direction.flat ? MomentumPhase.neutral : (prevDir == Direction.flat or prevDir != curDir) ? MomentumPhase.accelerating : curStrength > prevStrength ? MomentumPhase.accelerating : curStrength < prevStrength ? (curStrength >= mcfg.strengthThreshold ? MomentumPhase.decelerating : MomentumPhase.exhausted) : (curAccel < mcfg.flatThreshold and barsInMomentum >= mcfg.confirmBars) ? MomentumPhase.sustained : MomentumPhase.accelerating
+
+// momentumConfirmsTrendDir(momDir, trend)   @internal
+//   Responsibility : Whether momentum agrees with the trend direction. Reads the
+//                    TrendState ONLY through the frozen trendDirection accessor
+//                    (read-only; Trend is the single source of truth for trend).
+//   Returns        : bool.  Determinism: pure.  Errors: none.
+momentumConfirmsTrendDir(Direction momDir, TrendState trend) =>
+    momDir == trendDirection(trend) and momDir != Direction.flat
+
+// momentumEvaluate(state, context, trend)   @experimental
+//   Responsibility : Orchestrate the chart-TF momentum and return the immutable
+//                    MomentumState. The ONLY producer of MomentumState and the
+//                    ONLY reader/updater of state.momentumMemory.
+//   Parameters     : state — KernelState; context — the bar's BarContext;
+//                    trend — the bar's TrendState (consumed READ-ONLY).
+//   Returns        : MomentumState (per-bar snapshot).
+//   Determinism    : deterministic; non-repainting; O(1) per bar.
+//   Errors         : none (guards na via util helpers).
+//   Note           : chart-only baseline — confidence/quality track strength and
+//                    alignment (chart/HTF) is trivially true; MTF differentiates
+//                    them in M3.3. trendAligned is computed and exposed now.
+momentumEvaluate(KernelState state, BarContext context, TrendState trend) =>
+    // momentumEvaluate is the sole toucher of momentumMemory — including its lazy init.
+    if na(state.momentumMemory)
+        state.momentumMemory := MomentumMemory.new()
+    MomentumConfig mcfg = cfgGet(state).momentum
+    MomentumTimeframeView chart = momentumChartView(mcfg)
+    Direction dir      = chart.direction
+    float     strength = chart.strength
+    float     acceleration = momentumRawAcceleration(strength, mcfg.accelLength)
+    float     confidence   = dir == Direction.flat ? UTIL_NORMALIZED_MIN : strength
+    float     quality      = dir == Direction.flat ? UTIL_NORMALIZED_MIN : strength
+    bool      aligned      = true
+    bool      trendAligned = momentumConfirmsTrendDir(dir, trend)
+    MomentumStrength band  = momentumClassifyStrength(strength, mcfg)
+    bool      active       = dir != Direction.flat and strength >= mcfg.strengthThreshold
+    MomentumPhase phase    = momentumClassifyPhase(dir, strength, acceleration, state.momentumMemory.previousDirection, state.momentumMemory.previousStrength, state.momentumMemory.barsInMomentum, mcfg)
+    MomentumState ms = MomentumState.new(dir, band, strength, acceleration, confidence, quality, phase, aligned, trendAligned, active, context.barIndex)
+    // Update cross-bar memory (only momentumEvaluate; O(1)). Read prev* before overwriting.
+    bool sameDir = dir == state.momentumMemory.previousDirection and dir != Direction.flat
+    bool flipped = state.momentumMemory.previousDirection != Direction.flat and dir != Direction.flat and dir != state.momentumMemory.previousDirection
+    state.momentumMemory.barsInMomentum       := dir == Direction.flat ? 0 : sameDir ? state.momentumMemory.barsInMomentum + 1 : 1
+    state.momentumMemory.reversalCounter      := flipped ? state.momentumMemory.reversalCounter + 1 : state.momentumMemory.reversalCounter
+    state.momentumMemory.transitionCounter    := phase != state.momentumMemory.previousPhase ? state.momentumMemory.transitionCounter + 1 : state.momentumMemory.transitionCounter
+    state.momentumMemory.previousDirection    := dir
+    state.momentumMemory.previousPhase        := phase
+    state.momentumMemory.previousStrength     := strength
+    state.momentumMemory.previousAcceleration := acceleration
+    ms
+
+// -- Momentum accessors (pure, read-only; Experimental until 0.3.0). All @experimental.
+// momentumDirection(ms)    — discrete direction.
+momentumDirection(MomentumState ms) => ms.direction
+// momentumStrength(ms)     — normalized strength [0,1].
+momentumStrength(MomentumState ms) => ms.strength
+// momentumAcceleration(ms) — normalized magnitude of momentum change [0,1].
+momentumAcceleration(MomentumState ms) => ms.acceleration
+// momentumConfidence(ms)   — normalized confidence [0,1].
+momentumConfidence(MomentumState ms) => ms.confidence
+// momentumQuality(ms)      — normalized quality [0,1].
+momentumQuality(MomentumState ms) => ms.quality
+// momentumPhase(ms)        — lifecycle / acceleration phase.
+momentumPhase(MomentumState ms) => ms.phase
+// momentumIsActive(ms)     — tradeable momentum present.
+momentumIsActive(MomentumState ms) => ms.isActive
+// momentumIsAligned(ms)    — chart/HTF agreement (trivially true until M3.3).
+momentumIsAligned(MomentumState ms) => ms.aligned
+// momentumTrendAligned(ms) — momentum agrees with the trend direction (read-only Trend).
+momentumTrendAligned(MomentumState ms) => ms.trendAligned
+
+
+// =============================================================================
+//  MODULE PLACEHOLDERS (04 – 14)
 // -----------------------------------------------------------------------------
 //  Documentation seams only — no code runs here. Scope and order are
 //  authoritative in docs/SPECIFICATION.md and docs/ROADMAP.md.
 // -----------------------------------------------------------------------------
-//  03 Momentum Engine     06 Liquidity            09 Signal Engine
 //  04 Support/Resistance  07 Order Blocks         10 Trade Engine
 //  05 Market Structure    08 Fair Value Gap       11 Risk Manager
-//  12 Dashboard           13 Alerts               14 Optimization
+//  06 Liquidity           09 Signal Engine        12 Dashboard
+//  13 Alerts              14 Optimization
 //  TODO: implement per each src/modules/<NN-name>/README.md
 // =============================================================================
 
@@ -1223,9 +1373,10 @@ trendSelfCheck(TrendState ts, TrendConfig tcfg) =>
 // -----------------------------------------------------------------------------
 //  Single lifecycle wiring. coreInit() runs once (var initializer); coreOnBar()
 //  runs every bar and returns the BarContext; trendEvaluate() then computes the
-//  multi-timeframe TrendState. No orders, no plots, no alerts — the trend is
-//  computed but NOT acted upon (zero trading behavior). `context` and `trend`
-//  are the integration seams the analysis/decision modules (03+, 09) will consume.
+//  multi-timeframe TrendState; momentumEvaluate() then computes the chart-TF
+//  MomentumState (consuming the trend read-only). No orders, no plots, no alerts
+//  — both are computed but NOT acted upon (zero trading behavior). `context`,
+//  `trend`, and `momentum` are the seams the decision modules (09) will consume.
 // =============================================================================
 var KernelState coreState = coreInit()
 BarContext context = coreOnBar(coreState)
@@ -1236,6 +1387,10 @@ TrendState trend = trendEvaluate(coreState, context)
 // in production). Mirrors the Core self-tests; never mutates state or emits output.
 if cfgGet(coreState).debugEnabled
     trendSelfCheck(trend, cfgGet(coreState).trend)
+// Module 03 — compute the chart-timeframe momentum each bar. Consumes `trend`
+// READ-ONLY; `momentum` is a seam for later modules; unused for now (no
+// signals/orders/plots). momentumEvaluate is the sole producer of MomentumState.
+MomentumState momentum = momentumEvaluate(coreState, context, trend)
 
 
 // =============================================================================
@@ -1268,8 +1423,8 @@ if cfgGet(coreState).debugEnabled
 // =============================================================================
 //  MODULE 03 — MILESTONE PROGRESS (Momentum Engine)
 // -----------------------------------------------------------------------------
-//    [x] M3.1  Momentum types, inputs, configuration            (v0.2.1, current)
-//    [ ] M3.2  Chart-timeframe momentum model                   (v0.2.2)
+//    [x] M3.1  Momentum types, inputs, configuration            (v0.2.1)
+//    [x] M3.2  Chart-timeframe momentum model                   (v0.2.2, current)
 //    [ ] M3.3  Multi-timeframe confirmation                     (v0.2.3)
 //    [ ] M3.4  Diagnostics + stabilization                      (v0.2.4)
 //    [ ] M3.5  Integration + finalize (Momentum API -> Stable)  (v0.3.0)
