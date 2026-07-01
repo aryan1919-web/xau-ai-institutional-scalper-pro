@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Coding standards in `docs/STYLE_GUIDE.md`: subsystem/module prefix registry, function
   and file section ordering, expanded documentation-block requirements.
 - Architectural Decision Records **ADR-0006 – ADR-0014** in `docs/DECISIONS.md`.
+- **Semantic Versioning Policy** (PATCH / MINOR / MAJOR bump rules) — authoritative in
+  `docs/ROADMAP.md`, mirrored in `CONTRIBUTING.md`.
+- **Official Git branching model** in `CONTRIBUTING.md` (`main` / `develop` /
+  `feature/*` / `bugfix/*` / `docs/*` / `hotfix/*`), with merge rules and a
+  repository-protection-rules table (protected branches, direct-commit / force-push /
+  review / merge-strategy policy per branch).
+- **Release Checklist** in `CONTRIBUTING.md` (compile, docs, CHANGELOG, review report,
+  version, tag, release notes).
 
 _No changes to `src/MASTER_STRATEGY.pine` (architecture only)._
 
