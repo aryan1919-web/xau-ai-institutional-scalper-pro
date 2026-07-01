@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _No changes to `src/MASTER_STRATEGY.pine` (architecture only)._
 
+### Planned — Module 01 implementation
+
+Module 01 is implemented across four independently-compiled, independently-reviewed,
+independently-committed milestones. Each milestone is released and tagged on its own
+version (see [ROADMAP.md](ROADMAP.md#version-timeline)); dated sections are added below
+as each milestone lands:
+
+- **`0.0.2`** — M1.1: enums, UDTs, constants, empty subsystem scaffolding.
+- **`0.0.3`** — M1.2: utility, logging (bounded ring buffer), and validation subsystems.
+- **`0.0.4`** — M1.3: configuration (immutable `Config`) and context (confirmed-bar /
+  session / timeframe) subsystems. `ctxHtfValue` remains reserved (docs only).
+- **`0.1.0`** — M1.4: `KernelState`, lifecycle (`coreInit`/`coreOnBar`), debug
+  diagnostics, and final integration — Module 01 complete.
+
 ## [0.0.1] - 2026-07-01
 
 ### Added
