@@ -3,7 +3,7 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** Architecture approved · **Target version:** `0.1.0` · **Depends on:** none (foundation)
+> **Status:** In implementation — **M1.1 done (`v0.0.2`)**; M1.2–M1.4 pending · **Target version:** `0.1.0` · **Depends on:** none (foundation)
 
 This document is the authoritative **architecture** for the Core Framework. It is
 design only — no Pine code exists yet. Implementation is a separate, later,
@@ -220,14 +220,16 @@ Recorded as ADR-0006 – ADR-0014 in [../../../docs/DECISIONS.md](../../../docs/
 
 - _None yet._ Design targets the project [Performance Budget](../../../docs/SPECIFICATION.md#performance-budget).
 
-## Future implementation checklist
+## Implementation checklist
 
-- [ ] Enums + UDTs (`Config`, `BarContext`, `KernelState`, `ValidationResult`, `LogEntry`).
-- [ ] `util` subsystem (clamp, safeDiv, normalize, isValidNumber).
-- [ ] `log` subsystem (bounded ring buffer, gating).
-- [ ] `err` subsystem (fatal/warn/assert, hybrid validation application).
-- [ ] `cfg` subsystem (build, validate, get).
-- [ ] `ctx` subsystem (build, confirmed-bar, new-bar, session, HTF wrapper).
-- [ ] `state` subsystem (init, update, get).
-- [ ] `core` orchestrator (`coreInit`, `coreOnBar`).
-- [ ] Documentation: update SPECIFICATION, ARCHITECTURE, API, CHANGELOG.
+- [x] **M1.1 (`v0.0.2`)** — Enums (5) + UDTs (8, incl. `LogEntry` with `moduleId`/`errorId`),
+      structural constants, `MODULE_ID_*`, `DIAG_BUFFER_CAP`, empty subsystem scaffolding, no-op MAIN.
+- [ ] **M1.2 (`v0.0.3`)** — `util` (clamp, safeDiv, normalize, isValidNumber, roundToTick).
+- [ ] **M1.2 (`v0.0.3`)** — `log` subsystem (bounded ring buffer, gating).
+- [ ] **M1.2 (`v0.0.3`)** — `err` subsystem (fatal/warn/assert, hybrid validation).
+- [ ] **M1.3 (`v0.0.4`)** — `cfg` subsystem (build, validate, get; immutable `Config`).
+- [ ] **M1.3 (`v0.0.4`)** — `ctx` subsystem (build, confirmed-bar, new-bar, session, timeframe).
+      `ctxHtfValue` **reserved** (docs only) until first module needing `request.security`.
+- [ ] **M1.4 (`v0.1.0`)** — `state` subsystem (init, update, get).
+- [ ] **M1.4 (`v0.1.0`)** — `core` orchestrator (`coreInit`, `coreOnBar`) + MAIN integration.
+- [ ] **M1.4 (`v0.1.0`)** — debug diagnostics harness; finalize docs (API, CHANGELOG, ROADMAP).

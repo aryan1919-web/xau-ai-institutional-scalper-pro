@@ -7,45 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Nothing yet.
+
+## [0.0.2] - 2026-07-01
+
+Module 01 (Core Framework) — milestone **M1.1: types & scaffolding**. Declarations only;
+no behavior. (The `v0.0.2` git tag is created after review.)
+
 ### Added
-- **Module 01 — Core Framework architecture** (design only; no code). Full architecture
-  in `src/modules/01-core-framework/README.md`: responsibilities, subsystems
-  (`util`/`log`/`err`/`cfg`/`ctx`/`state`/orchestrator), planned public API, shared
-  enums/UDTs, hybrid validation, non-repainting primitives, single `KernelState`.
-- **API Stability Policy** (`Stable` / `Experimental` / `Internal`) in `docs/API.md`
-  and `docs/STYLE_GUIDE.md`.
-- **Performance Budget** (permanent, project-wide caps) in `docs/SPECIFICATION.md`,
-  mirrored in `docs/STYLE_GUIDE.md`.
-- **Module Ownership Matrix** — new `docs/MODULE_OWNERSHIP.md`, the authoritative
-  dependency contract for all 14 modules; indexed in `docs/README.md` and linked from
-  `docs/ARCHITECTURE.md`.
-- Coding standards in `docs/STYLE_GUIDE.md`: subsystem/module prefix registry, function
-  and file section ordering, expanded documentation-block requirements.
-- Architectural Decision Records **ADR-0006 – ADR-0014** in `docs/DECISIONS.md`.
-- **Semantic Versioning Policy** (PATCH / MINOR / MAJOR bump rules) — authoritative in
-  `docs/ROADMAP.md`, mirrored in `CONTRIBUTING.md`.
-- **Official Git branching model** in `CONTRIBUTING.md` (`main` / `develop` /
-  `feature/*` / `bugfix/*` / `docs/*` / `hotfix/*`), with merge rules and a
-  repository-protection-rules table (protected branches, direct-commit / force-push /
-  review / merge-strategy policy per branch).
-- **Release Checklist** in `CONTRIBUTING.md` (compile, docs, CHANGELOG, review report,
-  version, tag, release notes).
+- **Core enums (5):** `Direction`, `SessionState`, `TimeframeClass`, `LogLevel`,
+  `ValidationSeverity`.
+- **Core UDTs (8):** `LogEntry` (now with `moduleId` / `errorId`), `Diagnostics`,
+  `TimeframeContext`, `SessionContext`, `BarContext`, `ValidationResult`, `Config`,
+  `KernelState`.
+- **Structural constants:** `MODULE_ID_*` (per module), `DIAG_BUFFER_CAP`, project identity.
+- **Empty Core subsystem scaffolding** (bannered, no functions): `util` / `log` / `err` /
+  `cfg` / `ctx` / `state` / lifecycle; no-op MAIN.
+- Verified: exactly one `strategy()`; zero entries / exits / orders, `request.security`,
+  `ta.*`, or plots; no functions or calculations.
+- **Documentation carried since 0.0.1:** Module 01 architecture; API Stability Policy;
+  Performance Budget; Module Ownership Matrix (`docs/MODULE_OWNERSHIP.md`); STYLE_GUIDE
+  standards (prefix registry, ordering, documentation-block rules); ADR-0006 – ADR-0014;
+  Semantic Versioning Policy; Git branching model + repository-protection rules; Release
+  Checklist.
 
-_No changes to `src/MASTER_STRATEGY.pine` (architecture only)._
+### Changed
+- `PROJECT_VERSION` `0.0.1` → `0.0.2`.
 
-### Planned — Module 01 implementation
-
-Module 01 is implemented across four independently-compiled, independently-reviewed,
-independently-committed milestones. Each milestone is released and tagged on its own
-version (see [ROADMAP.md](ROADMAP.md#version-timeline)); dated sections are added below
-as each milestone lands:
-
-- **`0.0.2`** — M1.1: enums, UDTs, constants, empty subsystem scaffolding.
-- **`0.0.3`** — M1.2: utility, logging (bounded ring buffer), and validation subsystems.
-- **`0.0.4`** — M1.3: configuration (immutable `Config`) and context (confirmed-bar /
-  session / timeframe) subsystems. `ctxHtfValue` remains reserved (docs only).
-- **`0.1.0`** — M1.4: `KernelState`, lifecycle (`coreInit`/`coreOnBar`), debug
-  diagnostics, and final integration — Module 01 complete.
+### Notes
+- Remaining Module 01 milestones: `0.0.3` (M1.2), `0.0.4` (M1.3), `0.1.0` (M1.4 — complete).
 
 ## [0.0.1] - 2026-07-01
 
@@ -63,5 +53,6 @@ as each milestone lands:
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.0.1...HEAD
+[Unreleased]: https://example.com/compare/v0.0.2...HEAD
+[0.0.2]: https://example.com/compare/v0.0.1...v0.0.2
 [0.0.1]: https://example.com/releases/tag/v0.0.1

@@ -5,36 +5,35 @@
 // -----------------------------------------------------------------------------
 //  Project      : xau-ai-institutional-scalper-pro
 //  File         : src/MASTER_STRATEGY.pine
-//  Purpose      : Primary strategy entry point. This file is the ONLY artifact
-//                 compiled by TradingView. All future modules are integrated
-//                 into this single file (module documentation lives under
-//                 src/modules/ as markdown only).
+//  Purpose      : Primary strategy entry point. The ONLY file TradingView
+//                 compiles. All modules are integrated here (module docs live
+//                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.0.1  (framework only — no functionality yet)
+//  Version      : 0.0.2  (Module 01 · M1.1 — types & scaffolding)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
-//  STATUS       : FRAMEWORK ONLY.
-//                 This file intentionally contains NO trading logic:
-//                   - No indicators (no EMA / RSI / ATR / ADX / ...)
-//                   - No entries, no exits, no order management
-//                   - No Smart Money / Support-Resistance / Dashboard / Alerts
-//                   - No calculations of any kind
-//                 It establishes the compile-clean skeleton only. Trading logic
-//                 is added incrementally, one module at a time, per docs/ROADMAP.md.
+//  STATUS       : FRAMEWORK ONLY — Module 01 (Core Framework), milestone M1.1.
+//                 This build contains ONLY declarations and scaffolding:
+//                   - Shared enums and user-defined types (UDTs)
+//                   - Structural constants (identity, module IDs, buffer cap)
+//                   - Empty, bannered Core subsystem sections (no functions yet)
+//                   - A no-op MAIN section
+//                 It contains NO behavior of any kind:
+//                   - No functions, no calculations, no indicators
+//                   - No entries/exits/orders, no request.security, no plots
+//                 Subsystem logic arrives in later milestones (M1.2 – M1.4).
 //
-//  REPAINTING   : This project forbids repainting logic. When modules are
-//                 implemented, all higher-timeframe access MUST use
-//                 request.security(..., lookahead = barmerge.lookahead_off) with
-//                 confirmed (barstate.isconfirmed) values, and signals are acted
-//                 upon on bar close only. No future-leaking constructs.
+//  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
+//                 timeframe access will use request.security(..., lookahead =
+//                 barmerge.lookahead_off) on confirmed bars; act on bar close.
 //
-//  DETERMINISM  : The eventual AI scoring engine (Module 09) MUST be fully
-//                 deterministic and explainable. No black-box logic.
+//  DETERMINISM  : The eventual scoring engine (Module 09) MUST be deterministic
+//                 and explainable. No black-box logic.
 //
-//  See also     : docs/SPECIFICATION.md, docs/ARCHITECTURE.md, docs/STYLE_GUIDE.md,
-//                 docs/KNOWN_LIMITATIONS.md, docs/DECISIONS.md
+//  See also     : src/modules/01-core-framework/README.md, docs/ARCHITECTURE.md,
+//                 docs/STYLE_GUIDE.md, docs/API.md, docs/DECISIONS.md
 // =============================================================================
 
 
@@ -42,7 +41,7 @@
 //  STRATEGY DECLARATION
 // -----------------------------------------------------------------------------
 //  Declaration only. Metadata is explicit and conservative. No orders are
-//  generated anywhere in this framework build.
+//  generated anywhere in this build.
 // =============================================================================
 strategy(
      title                  = "XAU AI Institutional Scalper Pro",
@@ -64,34 +63,43 @@ strategy(
 // =============================================================================
 //  CONSTANTS
 // -----------------------------------------------------------------------------
-//  Structural constants only (identity / metadata). There are deliberately NO
-//  indicator parameters or numeric trading thresholds here — those arrive with
-//  their owning modules. Named constants exist so that no "magic numbers" leak
-//  into future logic.
+//  Structural constants only (identity, module identifiers, diagnostics sizing).
+//  No indicator parameters and no numeric trading thresholds — those arrive with
+//  their owning modules. Named constants exist so no "magic numbers" leak later.
 // =============================================================================
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.0.1"
+const string PROJECT_VERSION = "0.0.2"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
-// -- Total number of planned modules (see docs/ROADMAP.md). Used only for
-//    documentation / self-description; no logic depends on this value yet.
+// -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
+//    self-description only; no logic depends on this value.
 const int MODULE_COUNT = 14
 
+// -- Diagnostics ring-buffer capacity (bounded; within the Performance Budget,
+//    docs/SPECIFICATION.md#performance-budget). Consumed by the logging
+//    subsystem in M1.2; declared here as the single source of the cap.
+const int DIAG_BUFFER_CAP = 100
 
-// =============================================================================
-//  INPUT GROUPS
-// -----------------------------------------------------------------------------
-//  One collapsible group banner per future module so the settings panel is
-//  organised from day one. Inputs here are neutral placeholders (a single
-//  "enabled" toggle per module) that are READ BY NOTHING — no logic consumes
-//  them in this framework build. Real parameters are added with their modules.
-//
-//  Configuration is intentionally separated from logic (see AGENTS.md).
-// =============================================================================
+// -- Module identifiers (used as LogEntry.moduleId; no magic strings). Values
+//    match the prefix registry in docs/STYLE_GUIDE.md.
+const string MODULE_ID_CORE       = "CORE"
+const string MODULE_ID_TREND      = "TREND"
+const string MODULE_ID_MOMENTUM   = "MOM"
+const string MODULE_ID_SR         = "SR"
+const string MODULE_ID_STRUCTURE  = "STRUCT"
+const string MODULE_ID_LIQUIDITY  = "LIQ"
+const string MODULE_ID_ORDERBLOCK = "OB"
+const string MODULE_ID_FVG        = "FVG"
+const string MODULE_ID_SIGNAL     = "SIG"
+const string MODULE_ID_TRADE      = "TRADE"
+const string MODULE_ID_RISK       = "RISK"
+const string MODULE_ID_DASHBOARD  = "DASH"
+const string MODULE_ID_ALERTS     = "ALERT"
+const string MODULE_ID_OPTIMIZE   = "OPT"
 
-// -- Group titles (kept as constants to avoid duplicated string literals) -----
+// -- Input group titles (kept as constants to avoid duplicated string literals).
 const string G_01_CORE       = "01 · Core Framework"
 const string G_02_TREND      = "02 · Trend Engine"
 const string G_03_MOMENTUM   = "03 · Momentum Engine"
@@ -107,164 +115,238 @@ const string G_12_DASHBOARD  = "12 · Dashboard"
 const string G_13_ALERTS     = "13 · Alerts"
 const string G_14_OPTIMIZE   = "14 · Optimization"
 
-// -- Placeholder module toggles (declared, intentionally unused for now) ------
-//    Each toggle defaults to false so that, even once wired, no module is
-//    silently active. `tooltip` documents intent for the end user.
-bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.0.1.")
-bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.0.1.")
-bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.0.1.")
-bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.0.1.")
-bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.0.1.")
-bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.0.1.")
-bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.0.1.")
-bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.0.1.")
-bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.0.1.")
-bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.0.1.")
-bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.0.1.")
-bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.0.1.")
-bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.0.1.")
-bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.0.1.")
-
 
 // =============================================================================
-//  UTILITY FUNCTIONS (PLACEHOLDERS)
+//  ENUMS
 // -----------------------------------------------------------------------------
-//  Documented, single-responsibility stubs that return trivial values. They
-//  contain NO trading logic and perform NO calculations. They exist so the
-//  framework compiles and so future modules have named seams to grow into.
-//  Signatures are provisional and may change when modules are implemented.
+//  Shared vocabulary owned by the Core Framework and reused across module
+//  boundaries (docs/DECISIONS.md ADR-0007). Module-specific enums (e.g. trend
+//  regime, market phase) are owned by their modules and added when built.
 // =============================================================================
 
-// isFrameworkOnly()
-//   Responsibility : Report whether this build is framework-only (no logic).
-//   Returns        : bool — always true in v0.0.1.
-//   Note           : Placeholder self-description helper. No side effects.
-isFrameworkOnly() =>
-    true
+// Direction — shared directional vocabulary (bias, structure, signal, trade).
+enum Direction
+    long
+    short
+    flat
 
-// projectVersion()
-//   Responsibility : Expose the compiled project version string.
-//   Returns        : string — PROJECT_VERSION.
-//   Note           : Placeholder accessor. No side effects.
-projectVersion() =>
-    PROJECT_VERSION
+// SessionState — whether the current bar is inside an active trading session.
+enum SessionState
+    inactive
+    active
 
-// noop()
-//   Responsibility : Explicit no-operation seam.
-//   Returns        : void.
-//   Note           : Placeholder. Does nothing by design. Kept so future
-//                    modules have a documented pattern for void utilities.
-noop() =>
-    // TODO(module): replace with real utility helpers as modules are added.
-    na
+// TimeframeClass — classification of the chart timeframe for validation.
+enum TimeframeClass
+    m1
+    m5
+    other
+
+// LogLevel — ordered diagnostic severity (error highest, debug lowest).
+enum LogLevel
+    error
+    warn
+    info
+    debug
+
+// ValidationSeverity — classifies a validation result for the hybrid policy.
+enum ValidationSeverity
+    ok
+    warning
+    fatal
 
 
 // =============================================================================
-//  MODULE PLACEHOLDERS
+//  TYPES (USER-DEFINED TYPES)
 // -----------------------------------------------------------------------------
-//  One clearly delimited section per planned module. Each is a documentation
-//  seam ONLY — no code runs here yet. Implementation order and scope are
+//  Shared data structures owned by the Core Framework. Declared in dependency
+//  order (a type is defined before any type that references it). Fields carry
+//  neutral defaults; object-typed and array fields default to na and are
+//  populated by their owning subsystem in later milestones. "Immutable" types
+//  (e.g. Config) are enforced by convention — only the owning subsystem writes.
+// =============================================================================
+
+// LogEntry — one diagnostics record (stored in the ring buffer). Owned by `log`.
+type LogEntry
+    LogLevel level     = LogLevel.info
+    int      barIndex  = 0
+    int      time      = 0
+    string   moduleId  = ""
+    string   errorId   = ""
+    string   message   = ""
+
+// Diagnostics — bounded ring buffer of LogEntry plus counters. Owned by `log`;
+// lives inside KernelState (persistent). `entries` is allocated in M1.2.
+type Diagnostics
+    array<LogEntry> entries
+    int             head         = 0
+    int             count        = 0
+    int             capacity     = 0
+    int             droppedCount = 0
+
+// TimeframeContext — chart-timeframe classification (constant per run). Owned by `ctx`.
+type TimeframeContext
+    TimeframeClass tfClass            = TimeframeClass.other
+    bool           isSupportedPrimary = false
+
+// SessionContext — session sub-context for a bar. Owned by `ctx`.
+type SessionContext
+    SessionState state    = SessionState.inactive
+    bool         isActive = false
+
+// BarContext — per-bar computed context (transient). Owned by `ctx`.
+type BarContext
+    int              barIndex    = 0
+    int              time        = 0
+    bool             isConfirmed = false
+    bool             isNewBar    = false
+    SessionContext   session
+    TimeframeContext tf
+
+// ValidationResult — one configuration validation finding (transient). Owned by validation.
+type ValidationResult
+    ValidationSeverity severity = ValidationSeverity.ok
+    string             errorId  = ""
+    string             message  = ""
+
+// Config — immutable, validated configuration snapshot. Owned by `cfg`; built
+// once and read via cfgGet(). Trading parameters are added by their modules.
+type Config
+    bool           debugEnabled       = false
+    LogLevel       logThreshold       = LogLevel.info
+    TimeframeClass primaryTfClass     = TimeframeClass.other
+    bool           requireSupportedTf = true
+    bool           sessionEnabled     = false
+    string         sessionSpec        = ""
+    int            diagBufferCap      = DIAG_BUFFER_CAP
+    // Module enable toggles (mirror of the inputs; consumed by cfgBuild in M1.3).
+    bool           enableCore         = false
+    bool           enableTrend        = false
+    bool           enableMomentum     = false
+    bool           enableSr           = false
+    bool           enableStructure    = false
+    bool           enableLiquidity    = false
+    bool           enableOrderBlock   = false
+    bool           enableFvg          = false
+    bool           enableSignal       = false
+    bool           enableTrade        = false
+    bool           enableRisk         = false
+    bool           enableDashboard    = false
+    bool           enableAlerts       = false
+    bool           enableOptimize     = false
+
+// KernelState — the single persistent (var) object; the sole mutable global
+// (docs/DECISIONS.md ADR-0009). Owned by `state`; created on the first bar.
+type KernelState
+    Config           config
+    bool             initialized           = false
+    int              barCount              = 0
+    int              lastProcessedBarIndex = 0
+    TimeframeContext tf
+    Diagnostics      diag
+    bool             errorLatched          = false
+
+
+// =============================================================================
+//  INPUTS
+// -----------------------------------------------------------------------------
+//  One collapsible group per future module. Inputs are neutral placeholders
+//  (a single "enabled" toggle each) and are READ BY NOTHING in this build —
+//  the configuration subsystem (M1.3) will be their sole consumer, per ADR-0008.
+//  Configuration is intentionally separated from logic.
+// =============================================================================
+bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.0.2.")
+bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.0.2.")
+bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.0.2.")
+bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.0.2.")
+bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.0.2.")
+bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.0.2.")
+bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.0.2.")
+bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.0.2.")
+bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.0.2.")
+bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.0.2.")
+bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.0.2.")
+bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.0.2.")
+bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.0.2.")
+bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.0.2.")
+
+
+// =============================================================================
+//  CORE SUBSYSTEM SCAFFOLDING
+// -----------------------------------------------------------------------------
+//  Empty, bannered sections for the Core Framework subsystems, in dependency
+//  order. No functions exist yet — each subsystem is implemented in a later
+//  milestone. These banners fix the canonical section ordering (STYLE_GUIDE §8).
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+//  Core · util — pure, deterministic helpers.
+//  TODO(M1.2): implement per src/modules/01-core-framework/README.md §3.
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  Core · log — bounded diagnostics ring buffer.
+//  TODO(M1.2): implement (uses LogEntry / Diagnostics / DIAG_BUFFER_CAP).
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  Core · err — error handling and hybrid validation.
+//  TODO(M1.2): implement (uses ValidationResult / ValidationSeverity).
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  Core · cfg — configuration build / validate / accessor.
+//  TODO(M1.3): implement (builds the immutable Config from inputs).
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  Core · ctx — per-bar context (confirmed-bar / session / timeframe).
+//  TODO(M1.3): implement. Note: ctxHtfValue is reserved (docs/API.md) and is
+//  deferred until the first module requiring request.security (>= Module 02).
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  Core · state — single persistent KernelState.
+//  TODO(M1.4): implement (init / update / accessor).
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  Core · lifecycle — coreInit / coreOnBar orchestrator.
+//  TODO(M1.4): implement and wire the single call site into MAIN.
+// -----------------------------------------------------------------------------
+
+
+// =============================================================================
+//  MODULE PLACEHOLDERS (02 – 14)
+// -----------------------------------------------------------------------------
+//  Documentation seams only — no code runs here. Scope and order are
 //  authoritative in docs/SPECIFICATION.md and docs/ROADMAP.md.
+// -----------------------------------------------------------------------------
+//  02 Trend Engine        05 Market Structure     08 Fair Value Gap
+//  03 Momentum Engine     06 Liquidity            09 Signal Engine
+//  04 Support/Resistance  07 Order Blocks         10 Trade Engine
+//  11 Risk Manager        12 Dashboard            13 Alerts
+//  14 Optimization
+//  TODO: implement per each src/modules/<NN-name>/README.md
 // =============================================================================
-
-// -----------------------------------------------------------------------------
-//  MODULE 01 — Core Framework
-//  Responsibility: Foundational services, config plumbing, shared types/state.
-//  TODO: implement per src/modules/01-core-framework/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 02 — Trend Engine
-//  Responsibility: Directional bias / trend regime classification.
-//  TODO: implement per src/modules/02-trend-engine/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 03 — Momentum Engine
-//  Responsibility: Momentum / strength assessment.
-//  TODO: implement per src/modules/03-momentum-engine/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 04 — Support / Resistance Engine
-//  Responsibility: Structural price levels.
-//  TODO: implement per src/modules/04-support-resistance/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 05 — Market Structure
-//  Responsibility: Swing points, BOS / CHoCH classification.
-//  TODO: implement per src/modules/05-market-structure/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 06 — Liquidity
-//  Responsibility: Liquidity pools / sweeps mapping.
-//  TODO: implement per src/modules/06-liquidity/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 07 — Order Blocks
-//  Responsibility: Institutional order block detection.
-//  TODO: implement per src/modules/07-order-blocks/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 08 — Fair Value Gap
-//  Responsibility: Imbalance / FVG detection.
-//  TODO: implement per src/modules/08-fair-value-gap/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 09 — Signal Engine
-//  Responsibility: Deterministic, explainable scoring / signal synthesis.
-//  TODO: implement per src/modules/09-signal-engine/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 10 — Trade Engine
-//  Responsibility: Entry / exit orchestration (order placement).
-//  TODO: implement per src/modules/10-trade-engine/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 11 — Risk Manager
-//  Responsibility: Position sizing, stops, exposure control.
-//  TODO: implement per src/modules/11-risk-manager/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 12 — Dashboard
-//  Responsibility: On-chart informational panel.
-//  TODO: implement per src/modules/12-dashboard/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 13 — Alerts
-//  Responsibility: Alert condition routing / messaging.
-//  TODO: implement per src/modules/13-alerts/README.md
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-//  MODULE 14 — Optimization
-//  Responsibility: Parameter optimization helpers / diagnostics.
-//  TODO: implement per src/modules/14-optimization/README.md
-// -----------------------------------------------------------------------------
 
 
 // =============================================================================
-//  TODO — ROADMAP SUMMARY
+//  MAIN
 // -----------------------------------------------------------------------------
-//  Framework only (v0.0.1). Implement modules incrementally; each milestone
-//  must compile, pass review, and be committed before the next begins.
+//  No-op. Milestone M1.1 declares types and scaffolding only. The single
+//  per-bar call site — `BarContext context = coreOnBar()` — is wired here in
+//  M1.4 once the lifecycle exists. Nothing executes this build.
+// =============================================================================
+// TODO(M1.4): wire coreOnBar() here. No orders, plots, or calculations.
+
+
+// =============================================================================
+//  TODO — MODULE 01 MILESTONES
+// -----------------------------------------------------------------------------
+//    [x] M1.1  Enums, UDTs, constants, subsystem scaffolding   (v0.0.2, current)
+//    [ ] M1.2  util / log / err (validation) subsystems        (v0.0.3)
+//    [ ] M1.3  cfg / ctx subsystems                            (v0.0.4)
+//    [ ] M1.4  state / lifecycle / diagnostics / integration   (v0.1.0)
 //
-//    [ ] 01 Core Framework          [ ] 08 Fair Value Gap
-//    [ ] 02 Trend Engine            [ ] 09 Signal Engine
-//    [ ] 03 Momentum Engine         [ ] 10 Trade Engine
-//    [ ] 04 Support / Resistance    [ ] 11 Risk Manager
-//    [ ] 05 Market Structure        [ ] 12 Dashboard
-//    [ ] 06 Liquidity               [ ] 13 Alerts
-//    [ ] 07 Order Blocks            [ ] 14 Optimization
-//
-//  See docs/ROADMAP.md for the authoritative milestone plan.
+//  See docs/ROADMAP.md for the authoritative version timeline.
 // =============================================================================
