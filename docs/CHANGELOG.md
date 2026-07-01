@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.1.0] - 2026-07-01
+
+Module 01 (Core Framework) — milestone **M1.4: kernel state, lifecycle, diagnostics,
+integration**. **Module 01 is complete.** Foundation only — still zero trading behavior.
+
+### Added
+- **KernelState subsystem (`state`):** `stateInit(config, diag)`, `stateUpdate(state,
+  context)` (public); `stateGet`, `stateReset` (internal, debug). `stateInit` sizes the
+  diagnostics buffer from `config.diagBufferCap`, finalizes `primaryTfClass`, and enforces
+  `requireSupportedTf` (fatal `CORE-CFG-001` on an unsupported timeframe).
+- **Lifecycle subsystem (`core`):** `coreInit()` (once) and `coreOnBar(state)` (per bar).
+- **Integration:** single `var KernelState coreState = coreInit()` + one `coreOnBar(coreState)`
+  call in MAIN. `coreOnBar` returns the `BarContext` seam for modules 02-14.
+- **Debug diagnostics harness** inside `coreInit` (runs when `debugEnabled`): exercises
+  util / log / err / cfg / ctx and asserts validation, ring-buffer round-trip, config access,
+  and state initialization; plus a per-bar `barCount` parity invariant in `coreOnBar`
+  (proves single initialization + monotonic increment).
+
+### Changed
+- `PROJECT_VERSION` `0.0.4` → `0.1.0`.
+- `docs/API.md`: `state` and `core` moved to *implemented* (Since 0.1.0); documented the
+  final reference-passing design (no parameter-less `cfgGet`); only `ctxHtfValue` remains reserved.
+- `docs/ROADMAP.md`: current-version marker moved to `0.1.0`.
+
+### Notes
+- Verification: one `strategy()`; zero entries/exits/orders, `request.security`, `ta.*`, or
+  plots. Non-repainting (current-bar builtins only). Single initialization via `var`.
+- **Module 01 is complete.** Next: Module 02 — Trend Engine (`0.2.0`).
+
 ## [0.0.4] - 2026-07-01
 
 Module 01 (Core Framework) — milestone **M1.3: configuration & context**.
@@ -120,7 +149,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.0.4...HEAD
+[Unreleased]: https://example.com/compare/v0.1.0...HEAD
+[0.1.0]: https://example.com/compare/v0.0.4...v0.1.0
 [0.0.4]: https://example.com/compare/v0.0.3...v0.0.4
 [0.0.3]: https://example.com/compare/v0.0.2...v0.0.3
 [0.0.2]: https://example.com/compare/v0.0.1...v0.0.2

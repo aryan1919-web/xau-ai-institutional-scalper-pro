@@ -49,11 +49,11 @@ is consistent.
 
 | Version | Milestone | Deliverable |
 |---------|-----------|-------------|
-| `0.0.1` | M0 — Project Architecture | Repository, documentation set, framework-only `MASTER_STRATEGY.pine`. **(current)** |
+| `0.0.1` | M0 — Project Architecture | Repository, documentation set, framework-only `MASTER_STRATEGY.pine`. |
 | `0.0.2` | M1.1 — Core: types & scaffolding | Enums, UDTs, constants, empty subsystem scaffolding. |
 | `0.0.3` | M1.2 — Core: utilities, logging, validation | `util`, `log` (bounded ring buffer), `err`/validation subsystems. |
 | `0.0.4` | M1.3 — Core: configuration & context | `cfg` (immutable `Config`) and `ctx` (confirmed-bar/session/timeframe). |
-| `0.1.0` | M1.4 — Module 01 Core Framework complete | `KernelState`, lifecycle (`coreInit`/`coreOnBar`), diagnostics, integration. |
+| `0.1.0` | M1.4 — Module 01 Core Framework complete | `KernelState`, lifecycle (`coreInit`/`coreOnBar`), diagnostics, integration. **(current)** |
 | `0.2.0` | M2 — Module 02 Trend Engine | Deterministic trend regime classification. |
 | `0.3.0` | M3 — Module 03 Momentum Engine | Momentum / strength assessment. |
 | `0.4.0` | M4 — Module 04 Support/Resistance | Structural level detection. |

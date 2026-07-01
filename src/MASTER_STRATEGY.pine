@@ -10,22 +10,19 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.0.4  (Module 01 · M1.3 — configuration & context)
+//  Version      : 0.1.0  (Module 01 · M1.4 — kernel state, lifecycle, integration)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
-//  STATUS       : FRAMEWORK ONLY — Module 01 (Core Framework), milestone M1.3.
-//                 Implemented subsystems (defined, not yet wired to a call site):
-//                   - util : pure helpers (clamp, normalize, safeDiv, roundToTick, ...)
-//                   - log  : bounded O(1) diagnostics ring buffer (level/debug gated)
-//                   - err  : hybrid validation (fatal halt / recoverable warning)
-//                   - cfg  : immutable Config built from inputs (validated)
-//                   - ctx  : per-bar context (confirmed-bar / session / timeframe)
-//                 Still absent (M1.4): state + lifecycle + integration; and
-//                 ctxHtfValue (reserved until a module needs request.security).
-//                 Contains NO trading behavior: no entries/exits/orders, no
-//                 request.security, no ta.*, no plots, no calculations. The
-//                 subsystems are defined but not invoked (MAIN remains no-op).
+//  STATUS       : Module 01 (Core Framework) COMPLETE. All subsystems implemented
+//                 and wired via the lifecycle:
+//                   - util / log / err / cfg / ctx / state
+//                   - coreInit() runs once; coreOnBar() runs per bar (see MAIN)
+//                   - debug diagnostics harness exercises every subsystem
+//                 Foundation only — still NO trading behavior: no entries/exits/
+//                 orders, no request.security, no ta.*, no plots, no calculations.
+//                 coreOnBar() returns the BarContext seam that modules 02-14 will
+//                 consume. ctxHtfValue remains reserved (>= Module 02).
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -72,7 +69,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.0.4"
+const string PROJECT_VERSION = "0.1.0"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -288,20 +285,20 @@ int      inpSessionEnd         = input.int(MINUTES_PER_DAY, "Session end (minute
 int      inpDiagBufferCap      = input.int(DIAG_BUFFER_CAP, "Diagnostics buffer size", minval = DIAG_BUFFER_CAP_MIN, maxval = DIAG_BUFFER_CAP, group = G_01_CORE, tooltip = "Diagnostics entries retained (bounded by the performance budget).")
 
 // -- Module enable toggles. ---------------------------------------------------
-bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.0.4.")
-bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.0.4.")
-bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.0.4.")
-bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.0.4.")
-bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.0.4.")
-bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.0.4.")
-bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.0.4.")
-bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.0.4.")
-bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.0.4.")
-bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.0.4.")
-bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.0.4.")
-bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.0.4.")
-bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.0.4.")
-bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.0.4.")
+bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.1.0.")
+bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.1.0.")
+bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.1.0.")
+bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.1.0.")
+bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.1.0.")
+bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.1.0.")
+bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.1.0.")
+bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.1.0.")
+bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.1.0.")
+bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.1.0.")
+bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.1.0.")
+bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.1.0.")
+bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.1.0.")
+bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.1.0.")
 
 
 // =============================================================================
@@ -636,14 +633,113 @@ ctxBuild(Config cfg) =>
     BarContext.new(bar_index, time, ctxIsConfirmedBar(), ctxIsNewBar(), ctxComputeSession(cfg), ctxTimeframe())
 
 // -----------------------------------------------------------------------------
-//  Core · state — single persistent KernelState.
-//  TODO(M1.4): implement (init / update / accessor).
+//  Core · state — single persistent KernelState (M1.4).
+//  The KernelState object is the sole mutable global (ADR-0009); it is created
+//  in global scope (MAIN) and threaded to these functions by reference.
 // -----------------------------------------------------------------------------
 
+// stateInit(config, diag)   @experimental
+//   Responsibility : Build the kernel state on the first bar: cache config, size
+//                    the diagnostics buffer from config.diagBufferCap, finalize
+//                    primaryTfClass, and enforce requireSupportedTf.
+//   Parameters     : config — validated Config; diag — diagnostics buffer to adopt
+//                    (reuses the one cfgBuild logged into, preserving warnings).
+//   Returns        : KernelState (initialized).
+//   Determinism    : deterministic per run.
+//   Errors         : fatal — halts if requireSupportedTf and the timeframe is unsupported.
+stateInit(Config config, Diagnostics diag) =>
+    KernelState state = KernelState.new()
+    state.config := config
+    if na(diag.entries)
+        diag.entries      := array.new<LogEntry>(config.diagBufferCap)
+        diag.capacity     := config.diagBufferCap
+        diag.head         := 0
+        diag.count        := 0
+        diag.droppedCount := 0
+    state.diag := diag
+    state.tf := ctxTimeframe()
+    state.config.primaryTfClass := state.tf.tfClass
+    if config.requireSupportedTf and not state.tf.isSupportedPrimary
+        errRaiseFatal(ERR_CFG_UNSUPPORTED_TF, "unsupported chart timeframe; require a primary M1 or M5 chart")
+    state.initialized := true
+    state
+
+// stateUpdate(state, context)   @experimental
+//   Responsibility : Advance persistent counters for the current bar (O(1)).
+//   Parameters     : state — KernelState; context — the bar's BarContext.
+//   Returns        : void.  Determinism: deterministic.  Errors: none.
+stateUpdate(KernelState state, BarContext context) =>
+    state.barCount := state.barCount + 1
+    state.lastProcessedBarIndex := context.barIndex
+
+// stateGet(state)   @internal
+//   Responsibility : Return the kernel state handle (the single mutable global).
+//   Parameters     : state — KernelState.
+//   Returns        : KernelState.
+//   Determinism    : pure accessor.  Errors: none.
+//   Note           : identity in the current reference-passing wiring; kept as the
+//                    canonical accessor seam for later modules.
+stateGet(KernelState state) =>
+    state
+
+// stateReset(state)   @internal  (debug only)
+//   Responsibility : Clear diagnostics and reset counters (does NOT rebuild config).
+//   Parameters     : state — KernelState.
+//   Returns        : void.  Determinism: deterministic.  Errors: none.
+//   Note           : diagnostic / testing aid; not part of the normal lifecycle.
+stateReset(KernelState state) =>
+    logClear(state.diag)
+    state.barCount := 0
+    state.lastProcessedBarIndex := 0
+    state.errorLatched := false
+
 // -----------------------------------------------------------------------------
-//  Core · lifecycle — coreInit / coreOnBar orchestrator.
-//  TODO(M1.4): implement and wire the single call site into MAIN.
+//  Core · lifecycle — coreInit / coreOnBar (M1.4).
+//  coreInit runs once (first bar); coreOnBar runs every bar and returns the
+//  BarContext seam that modules 02-14 will consume.
 // -----------------------------------------------------------------------------
+
+// coreInit()   @stable
+//   Responsibility : Build config + kernel state once, and (in debug) run the
+//                    diagnostics harness exercising util / log / err / cfg / ctx.
+//   Returns        : KernelState.
+//   Determinism    : deterministic per run.
+//   Errors         : fatal — invalid config or an unsupported timeframe halt here.
+coreInit() =>
+    Diagnostics diag = Diagnostics.new()
+    Config config = cfgBuild(diag)
+    KernelState state = stateInit(config, diag)
+    if config.debugEnabled
+        // util — pure helper edge cases.
+        errAssert(utilClamp(2.0, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX) == UTIL_NORMALIZED_MAX, ERR_ASSERT_FAILED, "utilClamp upper bound", true)
+        errAssert(utilClamp(-2.0, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX) == UTIL_NORMALIZED_MIN, ERR_ASSERT_FAILED, "utilClamp lower bound", true)
+        errAssert(utilSafeDiv(1.0, 0.0, UTIL_NORMALIZED_MIN) == UTIL_NORMALIZED_MIN, ERR_ASSERT_FAILED, "utilSafeDiv guards zero", true)
+        errAssert(utilNormalize(5.0, 0.0, 10.0) == 0.5, ERR_ASSERT_FAILED, "utilNormalize midpoint", true)
+        errAssert(not utilIsValidNumber(na), ERR_ASSERT_FAILED, "utilIsValidNumber rejects na", true)
+        // log — ring buffer round-trip (write at the active threshold so it always emits).
+        logWrite(state.diag, config.logThreshold, MODULE_ID_CORE, ERR_NONE, "core self-test", config.logThreshold, config.debugEnabled)
+        errAssert(array.size(logDrain(state.diag)) >= 1, ERR_ASSERT_FAILED, "logDrain returns entries", true)
+        logClear(state.diag)
+        errAssert(array.size(logDrain(state.diag)) == 0, ERR_ASSERT_FAILED, "logClear empties buffer", true)
+        // cfg / ctx / state — config accessible, context builds, state initialized.
+        errAssert(state.initialized, ERR_ASSERT_FAILED, "state initialized", true)
+        errAssert(cfgGet(state).diagBufferCap >= DIAG_BUFFER_CAP_MIN, ERR_ASSERT_FAILED, "config accessible via cfgGet", true)
+        errAssert(not na(ctxBuild(config)), ERR_ASSERT_FAILED, "context builds", true)
+    state
+
+// coreOnBar(state)   @stable
+//   Responsibility : Per-bar seam — build the BarContext and advance state.
+//   Parameters     : state — KernelState.
+//   Returns        : BarContext (consumed by modules 02-14).
+//   Determinism    : deterministic per bar; non-repainting.
+//   Errors         : none (debug assertions only).
+coreOnBar(KernelState state) =>
+    Config config = cfgGet(state)
+    BarContext context = ctxBuild(config)
+    stateUpdate(state, context)
+    if config.debugEnabled
+        errAssert(state.barCount == context.barIndex + 1, ERR_ASSERT_FAILED, "barCount parity (single init + monotonic)", true)
+    context
 
 
 // =============================================================================
@@ -664,12 +760,14 @@ ctxBuild(Config cfg) =>
 // =============================================================================
 //  MAIN
 // -----------------------------------------------------------------------------
-//  No-op. Through M1.3 the util / log / err / cfg / ctx subsystems are DEFINED
-//  but not invoked. The single per-bar call site — `BarContext context =
-//  coreOnBar()` — is wired here in M1.4 once the lifecycle exists. Nothing
-//  executes this build.
+//  Single lifecycle wiring. coreInit() runs once (var initializer); coreOnBar()
+//  runs every bar and returns the BarContext seam for modules 02-14. No orders,
+//  no plots, no calculations — this build still produces zero trading behavior.
+//  `context` is intentionally unused for now: it is the integration point that
+//  the analysis modules (02+) will consume.
 // =============================================================================
-// TODO(M1.4): wire coreOnBar() here. No orders, plots, or calculations.
+var KernelState coreState = coreInit()
+BarContext context = coreOnBar(coreState)
 
 
 // =============================================================================
@@ -677,8 +775,9 @@ ctxBuild(Config cfg) =>
 // -----------------------------------------------------------------------------
 //    [x] M1.1  Enums, UDTs, constants, subsystem scaffolding   (v0.0.2)
 //    [x] M1.2  util / log / err (validation) subsystems        (v0.0.3)
-//    [x] M1.3  cfg / ctx subsystems                            (v0.0.4, current)
-//    [ ] M1.4  state / lifecycle / diagnostics / integration   (v0.1.0)
+//    [x] M1.3  cfg / ctx subsystems                            (v0.0.4)
+//    [x] M1.4  state / lifecycle / diagnostics / integration   (v0.1.0, current)
 //
+//  Module 01 (Core Framework) is COMPLETE at v0.1.0.
 //  See docs/ROADMAP.md for the authoritative version timeline.
 // =============================================================================

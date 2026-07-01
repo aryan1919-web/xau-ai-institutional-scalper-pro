@@ -5,7 +5,7 @@ document grows alongside the code: every public function must be listed here wit
 its responsibility, parameters, return value, and notes (see
 [STYLE_GUIDE.md](STYLE_GUIDE.md) for documentation rules).
 
-- **Status:** Module 01 in progress (`v0.0.4`, M1.3 — configuration & context implemented).
+- **Status:** Module 01 (Core Framework) **COMPLETE** (`v0.1.0`).
 - **Scope:** Only functions intended for reuse across modules are "public" and
   documented here. Private, single-use helpers are documented inline.
 
@@ -48,12 +48,11 @@ live in [`../src/MASTER_STRATEGY.pine`](../src/MASTER_STRATEGY.pine); *Planned* 
 the design contract. See
 [../src/modules/01-core-framework/README.md](../src/modules/01-core-framework/README.md).
 
-> **Milestone note (M1.2):** Config (M1.3) and `KernelState` (M1.4) are not yet wired,
-> so the logging / validation functions take their gating context — a `Diagnostics`
-> handle, the `threshold` level, and `debugEnabled` — as **explicit parameters**. The
-> M1.4 lifecycle will supply these from the cached `Config` / `KernelState`, so later
-> modules call the simpler forms. These signatures are therefore `@stable` in intent
-> but may gain convenience wrappers at M1.4.
+> **Design note (reference-passing):** the single `KernelState` (ADR-0009) lives in
+> MAIN and is threaded to functions **by reference**; there is no hidden global that
+> functions read. Accessors/mutators therefore take an explicit handle (`state`, or a
+> `Diagnostics` + gating context) rather than being parameter-less. This is the final
+> Module 01 shape; a parameter-less `cfgGet()` is intentionally not provided.
 
 ### Implemented — utility (`util`) · Since 0.0.3
 
@@ -110,17 +109,34 @@ so a separate public `ctxSessionState` is not needed.
 `ctxComputeSession`, `ctxTimeframe` (M1.3). `logLevelRank` is a single-source severity
 ranking that keeps `logShouldEmit` free of duplicated `switch` logic (no-duplication rule).
 
-### Planned — state / lifecycle
+### Implemented — kernel state (`state`) · Since 0.1.0
 
-| Function | Signature | Returns | Level | Milestone |
-|----------|-----------|---------|-------|-----------|
-| `ctxHtfValue` | `ctxHtfValue(symbol, timeframe, expr)` | `<series>` | Stable | **Reserved** — deferred until the first module needing `request.security` (≥ M02) |
-| `stateInit` | `stateInit(config)` | `KernelState` | Experimental | M1.4 |
-| `stateUpdate` | `stateUpdate(context)` | `void` | Experimental | M1.4 |
-| `coreInit` | `coreInit()` | `void` | Stable | M1.4 |
-| `coreOnBar` | `coreOnBar()` | `BarContext` | Stable | M1.4 |
+| Function | Signature | Returns | Level |
+|----------|-----------|---------|-------|
+| `stateInit` | `stateInit(config, diag)` | `KernelState` | Experimental |
+| `stateUpdate` | `stateUpdate(state, context)` | `void` | Experimental |
 
-Planned internal helper: `stateGet`.
+Internal: `stateGet(state)`, `stateReset(state)` (debug only). `KernelState` is the
+single mutable global (ADR-0009), created in MAIN and threaded by reference. `stateInit`
+sizes the diagnostics buffer from `config.diagBufferCap`, finalizes `primaryTfClass`, and
+enforces `requireSupportedTf` (fatal `CORE-CFG-001` on an unsupported chart timeframe).
+
+### Implemented — lifecycle (`core`) · Since 0.1.0
+
+| Function | Signature | Returns | Level |
+|----------|-----------|---------|-------|
+| `coreInit` | `coreInit()` | `KernelState` | Stable |
+| `coreOnBar` | `coreOnBar(state)` | `BarContext` | Stable |
+
+`coreInit()` runs once (MAIN `var` initializer); `coreOnBar(state)` runs every bar and
+returns the `BarContext` seam for modules 02-14. In debug mode `coreInit` runs a
+diagnostics harness exercising util / log / err / cfg / ctx.
+
+### Reserved
+
+| Function | Signature | Returns | Level | Status |
+|----------|-----------|---------|-------|--------|
+| `ctxHtfValue` | `ctxHtfValue(symbol, timeframe, expr)` | `<series>` | Stable | Reserved — deferred until the first module needing `request.security` (≥ M02) |
 
 ## Other module public functions
 
