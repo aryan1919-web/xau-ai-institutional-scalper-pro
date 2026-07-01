@@ -35,11 +35,14 @@ Legend: "Core" = Module 01. Order/position state = `strategy.*` position, open o
 - **May never depend upon:** any other module (foundation).
 
 ## 02 — Trend Engine
-- **Responsibilities:** classify trend regime (bias + strength).
-- **Data owned:** `TrendObservation` (direction, strength, factors).
+- **Responsibilities:** classify trend regime (bias + strength). **Complete & frozen at `v0.2.0`**
+  ([ADR-0016](DECISIONS.md)).
+- **Data owned:** `TrendState` — the immutable per-bar ABI (normalized outputs only: `direction`,
+  `strengthBand`, `strength`, `confidence`, `quality`, `phase`, `aligned`, `isActive`, `barIndex`).
+  Produced solely by `trendEvaluate`; cross-bar `TrendMemory` is touched only by `trendEvaluate`.
 - **Data consumed:** Core (`BarContext`, `Config`, `ctxHtfValue`, utilities), market data.
 - **Data prohibited:** order/position state; other analysis modules' internals.
-- **May be called by:** 09 Signal; 12 Dashboard (read-only).
+- **May be called by:** 09 Signal; 12 Dashboard (read-only) — via the frozen `trend*` accessors.
 - **May never depend upon:** 03–14.
 
 ## 03 — Momentum Engine

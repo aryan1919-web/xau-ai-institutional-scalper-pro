@@ -218,6 +218,33 @@ exclusively inside `ctxHtfValue`.
 - **Diagnostics:** in debug mode, `trendSelfCheck` asserts the `TrendState` ABI invariants
   (normalized ranges + output consistency) once per bar via `errAssert` (read-only; no output).
 
+### Dependency & consumption (frozen)
+- **Depends only on Core (Module 01):** `BarContext`, `Config`/`cfgGet`, `ctxHtfValue`, `util*`,
+  `err*`. It consumes **no** other module ([MODULE_OWNERSHIP.md](MODULE_OWNERSHIP.md),
+  [ARCHITECTURE.md](ARCHITECTURE.md) §4–5). No circular dependency is possible: every Trend input
+  is a Core primitive or market data.
+- **Consumed by** the analysis/decision/presentation modules (03–14) purely by calling the frozen
+  accessors on the per-bar `TrendState` — a read-only, one-directional data flow (Trend → Signal
+  Engine → …). Consumers never mutate `TrendState` or `TrendMemory`.
+
+### Future compatibility — reserved additive surface (post-freeze, **not implemented**)
+The frozen `TrendState` ABI already carries two fields with **no** dedicated accessor yet:
+`strengthBand` (`TrendStrength`) and `barIndex` (`int`). If a future module needs them through the
+public surface (e.g. Dashboard rendering the discrete band, or the Signal Engine bucketing by
+band), the following **additive** accessors may be introduced later:
+
+| Reserved accessor | Would return | Rationale |
+|-------------------|--------------|-----------|
+| `trendStrengthBand(ts)` | `TrendStrength` | discrete band already in the ABI; convenience over `ts.strengthBand`. |
+| `trendBarIndex(ts)` | `int` | snapshot freshness; convenience over `ts.barIndex`. |
+
+These are **purely additive** over already-frozen ABI fields — they do **not** unfreeze or change
+any existing API, require **no** new `TrendState` field, and would land as a normal MINOR bump.
+The freeze (ADR-0016) forbids renaming/redesigning existing APIs and adding raw implementation
+fields; it does **not** forbid additive accessors over frozen fields. No other future consumer
+(Modules 03–14) requires a new public Trend function — the eight-function API is otherwise
+sufficient.
+
 ## Other module public functions
 
 Populated as each subsequent module is implemented, grouped by module.

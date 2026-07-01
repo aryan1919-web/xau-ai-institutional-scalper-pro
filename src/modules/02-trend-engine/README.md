@@ -108,6 +108,29 @@ change, no signals, no orders, no plots, no alerts.
   and the sole toucher of `KernelState.trendMemory`; `ctxHtfValue` remains the only
   `request.security` wrapper with a single executable call site.
 
+## Contract freeze — dependency & future compatibility (v0.2.0)
+
+Final architecture-freeze audit (documentation/validation only):
+
+- **Dependency:** the Trend Engine depends **only on Core (Module 01)** — `BarContext`, `Config`
+  (`cfgGet`), `ctxHtfValue`, `util*`, `err*` — plus market data. It consumes **no** other module,
+  so **no circular dependency** is possible. Consumed **read-only** by Modules 03–14 via the frozen
+  `trend*` accessors (see [MODULE_OWNERSHIP.md](../../../docs/MODULE_OWNERSHIP.md),
+  [ARCHITECTURE.md](../../../docs/ARCHITECTURE.md)).
+- **Performance (verified):** exactly **1** executable `request.security` (inside `ctxHtfValue`);
+  exactly **1** active HTF read (`trendHtfView`); **O(1)** per bar (no loops in the module); no
+  duplicated calculations (one shared `trendSignedStrength`); non-repainting; no hidden mutable
+  state (all cross-bar state is in `KernelState.trendMemory`, touched only by `trendEvaluate`).
+- **API sufficiency:** the eight-function public API covers all future consumers (Momentum,
+  S/R, Market Structure, Liquidity, Order Blocks, FVG, Signal, Trade, Risk, Dashboard, Alerts,
+  Optimization). No future module requires a **new** public Trend function.
+- **Reserved additive surface (documented, NOT implemented):** two frozen `TrendState` fields have
+  no accessor yet — `trendStrengthBand(ts) → TrendStrength` and `trendBarIndex(ts) → int`. If a
+  consumer (e.g. Dashboard, Signal Engine) later needs them via the public surface, these are
+  **purely additive** accessors over already-frozen fields (non-breaking, normal MINOR bump); they
+  do not unfreeze or alter any existing API. Full rationale in
+  [API.md](../../../docs/API.md).
+
 ## Design decisions
 
 - Fast/slow length inputs are **formula-agnostic** lookback slots (labeled generically, not

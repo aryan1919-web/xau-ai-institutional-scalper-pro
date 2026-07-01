@@ -117,6 +117,13 @@ presentation). No cycles are permitted. The authoritative, per-module dependency
 contract (data owned/consumed/prohibited, callers, forbidden dependencies) is
 [MODULE_OWNERSHIP.md](MODULE_OWNERSHIP.md).
 
+**Module 02 (Trend Engine) is complete and permanently frozen at `v0.2.0`**
+([ADR-0016](DECISIONS.md)). It depends **only on Core (Module 01)** — verified: every input is a
+Core primitive (`BarContext`, `Config`, `ctxHtfValue`, `util*`) or market data — so no cycle is
+possible. Downstream modules (03–14) consume it **read-only** through the frozen `trend*`
+accessors over the per-bar `TrendState`; the eight-function public API is sufficient for all of
+them (future needs are limited to additive convenience accessors — see [API.md](API.md)).
+
 ## 6. Core Framework internal architecture
 
 Module 01 occupies the Foundation layer and is itself organized into subsystems, in
