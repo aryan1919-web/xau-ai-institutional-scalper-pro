@@ -5,7 +5,7 @@ document grows alongside the code: every public function must be listed here wit
 its responsibility, parameters, return value, and notes (see
 [STYLE_GUIDE.md](STYLE_GUIDE.md) for documentation rules).
 
-- **Status:** Module 01 in progress (`v0.0.3`, M1.2 — utility / logging / validation implemented).
+- **Status:** Module 01 in progress (`v0.0.4`, M1.3 — configuration & context implemented).
 - **Scope:** Only functions intended for reuse across modules are "public" and
   documented here. Private, single-use helpers are documented inline.
 
@@ -82,28 +82,45 @@ the design contract. See
 | `errAssert` | `errAssert(condition, errorId, message, debugEnabled)` | `void` | Stable |
 | `errApplyValidation` | `errApplyValidation(diag, results, threshold, debugEnabled)` | `void` | Experimental |
 
-**Internal helpers (M1.2, not cross-module callable):** `utilMinutesOfDay`,
-`utilFormatFloat`, `logLevelRank`, `logShouldEmit`, `logFormat`, `errFormat`.
-`logLevelRank` is a single-source severity ranking that keeps `logShouldEmit` free of
-duplicated `switch` logic (no-duplication rule).
+### Implemented — configuration (`cfg`) · Since 0.0.4
 
-### Planned — configuration / context / state / lifecycle
+| Function | Signature | Returns | Level |
+|----------|-----------|---------|-------|
+| `cfgBuild` | `cfgBuild(diag)` | `Config` | Experimental |
+| `cfgGet` | `cfgGet(state)` | `Config` | Stable |
+
+`cfgBuild` is the only reader of `input.*` (ADR-0008); `Config` is immutable after build
+(by convention). `cfgGet` takes a `KernelState` handle until the M1.4 lifecycle provides
+a parameter-less form.
+
+### Implemented — context (`ctx`) · Since 0.0.4
+
+| Function | Signature | Returns | Level |
+|----------|-----------|---------|-------|
+| `ctxBuild` | `ctxBuild(cfg)` | `BarContext` | Experimental |
+| `ctxIsConfirmedBar` | `ctxIsConfirmedBar()` | `bool` | Stable |
+| `ctxIsNewBar` | `ctxIsNewBar()` | `bool` | Stable |
+
+Strictly non-repainting (current-bar builtins only; **zero `request.security`**). Session
+state is exposed through `BarContext.session` (built by the internal `ctxComputeSession`),
+so a separate public `ctxSessionState` is not needed.
+
+**Internal helpers (not cross-module callable):** `utilMinutesOfDay`, `utilFormatFloat`,
+`logLevelRank`, `logShouldEmit`, `logFormat`, `errFormat` (M1.2); `cfgValidate`,
+`ctxComputeSession`, `ctxTimeframe` (M1.3). `logLevelRank` is a single-source severity
+ranking that keeps `logShouldEmit` free of duplicated `switch` logic (no-duplication rule).
+
+### Planned — state / lifecycle
 
 | Function | Signature | Returns | Level | Milestone |
 |----------|-----------|---------|-------|-----------|
-| `cfgBuild` | `cfgBuild()` | `Config` | Experimental | M1.3 |
-| `cfgGet` | `cfgGet()` | `Config` | Stable | M1.3 |
-| `ctxBuild` | `ctxBuild(config)` | `BarContext` | Experimental | M1.3 |
-| `ctxIsConfirmedBar` | `ctxIsConfirmedBar()` | `bool` | Stable | M1.3 |
-| `ctxIsNewBar` | `ctxIsNewBar()` | `bool` | Stable | M1.3 |
-| `ctxSessionState` | `ctxSessionState(config)` | `SessionState` | Experimental | M1.3 |
 | `ctxHtfValue` | `ctxHtfValue(symbol, timeframe, expr)` | `<series>` | Stable | **Reserved** — deferred until the first module needing `request.security` (≥ M02) |
 | `stateInit` | `stateInit(config)` | `KernelState` | Experimental | M1.4 |
 | `stateUpdate` | `stateUpdate(context)` | `void` | Experimental | M1.4 |
 | `coreInit` | `coreInit()` | `void` | Stable | M1.4 |
 | `coreOnBar` | `coreOnBar()` | `BarContext` | Stable | M1.4 |
 
-Planned internal helpers: `cfgValidate`, `ctxComputeSession`, `stateGet`.
+Planned internal helper: `stateGet`.
 
 ## Other module public functions
 

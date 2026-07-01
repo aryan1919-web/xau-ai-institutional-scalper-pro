@@ -10,17 +10,19 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.0.3  (Module 01 · M1.2 — utility, logging, validation)
+//  Version      : 0.0.4  (Module 01 · M1.3 — configuration & context)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
-//  STATUS       : FRAMEWORK ONLY — Module 01 (Core Framework), milestone M1.2.
+//  STATUS       : FRAMEWORK ONLY — Module 01 (Core Framework), milestone M1.3.
 //                 Implemented subsystems (defined, not yet wired to a call site):
 //                   - util : pure helpers (clamp, normalize, safeDiv, roundToTick, ...)
 //                   - log  : bounded O(1) diagnostics ring buffer (level/debug gated)
 //                   - err  : hybrid validation (fatal halt / recoverable warning)
-//                 Still absent (later milestones): cfg (M1.3), ctx (M1.3),
-//                 state + lifecycle + integration (M1.4).
+//                   - cfg  : immutable Config built from inputs (validated)
+//                   - ctx  : per-bar context (confirmed-bar / session / timeframe)
+//                 Still absent (M1.4): state + lifecycle + integration; and
+//                 ctxHtfValue (reserved until a module needs request.security).
 //                 Contains NO trading behavior: no entries/exits/orders, no
 //                 request.security, no ta.*, no plots, no calculations. The
 //                 subsystems are defined but not invoked (MAIN remains no-op).
@@ -70,7 +72,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.0.3"
+const string PROJECT_VERSION = "0.0.4"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -80,7 +82,8 @@ const int MODULE_COUNT = 14
 // -- Diagnostics ring-buffer capacity (bounded; within the Performance Budget,
 //    docs/SPECIFICATION.md#performance-budget). Consumed by the logging
 //    subsystem in M1.2; declared here as the single source of the cap.
-const int DIAG_BUFFER_CAP = 100
+const int DIAG_BUFFER_CAP     = 100
+const int DIAG_BUFFER_CAP_MIN = 1     // minimum configurable diagnostics buffer size
 
 // -- Module identifiers (used as LogEntry.moduleId; no magic strings). Values
 //    match the prefix registry in docs/STYLE_GUIDE.md.
@@ -103,7 +106,12 @@ const string MODULE_ID_OPTIMIZE   = "OPT"
 const float UTIL_NORMALIZED_MIN = 0.0   // lower bound of a normalized value
 const float UTIL_NORMALIZED_MAX = 1.0   // upper bound of a normalized value
 const int   MINUTES_PER_HOUR    = 60    // minutes-of-day conversion factor
+const int   MINUTES_PER_DAY     = 1440  // 24h * 60m; session-window bound
 const int   DECIMAL_BASE        = 10    // base for decimal-precision rounding
+
+// -- Timeframe constants (minutes of the supported primary timeframes).
+const int TF_M1_MINUTES = 1
+const int TF_M5_MINUTES = 5
 
 // -- Error-ID registry. Stable identifiers used by the validation / error
 //    subsystem and stamped into LogEntry.errorId. Format: CORE-<AREA>-<NNN>.
@@ -231,7 +239,8 @@ type Config
     TimeframeClass primaryTfClass     = TimeframeClass.other
     bool           requireSupportedTf = true
     bool           sessionEnabled     = false
-    string         sessionSpec        = ""
+    int            sessionStartMinute = 0     // minute of day (exchange tz)
+    int            sessionEndMinute   = 0     // minute of day (exchange tz)
     int            diagBufferCap      = DIAG_BUFFER_CAP
     // Module enable toggles (mirror of the inputs; consumed by cfgBuild in M1.3).
     bool           enableCore         = false
@@ -264,25 +273,35 @@ type KernelState
 // =============================================================================
 //  INPUTS
 // -----------------------------------------------------------------------------
-//  One collapsible group per future module. Inputs are neutral placeholders
-//  (a single "enabled" toggle each) and are READ BY NOTHING in this build —
-//  the configuration subsystem (M1.3) will be their sole consumer, per ADR-0008.
+//  All inputs are read ONLY by cfgBuild (ADR-0008), which is not yet invoked
+//  (no lifecycle until M1.4), so they have no runtime effect this build.
 //  Configuration is intentionally separated from logic.
 // =============================================================================
-bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.0.3.")
-bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.0.3.")
-bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.0.3.")
-bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.0.3.")
-bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.0.3.")
-bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.0.3.")
-bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.0.3.")
-bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.0.3.")
-bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.0.3.")
-bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.0.3.")
-bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.0.3.")
-bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.0.3.")
-bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.0.3.")
-bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.0.3.")
+
+// -- Core configuration inputs (consumed only by cfgBuild). -------------------
+bool     inpDebugEnabled       = input.bool(false, "Debug diagnostics", group = G_01_CORE, tooltip = "Enable debug-level logging and assertions. Wired to behavior in M1.4.")
+LogLevel inpLogThreshold       = input.enum(LogLevel.info, "Log threshold", group = G_01_CORE, tooltip = "Minimum severity retained by the diagnostics buffer.")
+bool     inpRequireSupportedTf = input.bool(true, "Require M1 / M5 timeframe", group = G_01_CORE, tooltip = "Fail fast on an unsupported chart timeframe. Enforced by the lifecycle in M1.4.")
+bool     inpSessionEnabled     = input.bool(false, "Restrict to session", group = G_01_CORE, tooltip = "Mark bars outside the session window as inactive.")
+int      inpSessionStart       = input.int(0, "Session start (minute of day)", minval = 0, maxval = MINUTES_PER_DAY, group = G_01_CORE, tooltip = "Session start, minutes since midnight (exchange time).")
+int      inpSessionEnd         = input.int(MINUTES_PER_DAY, "Session end (minute of day)", minval = 0, maxval = MINUTES_PER_DAY, group = G_01_CORE, tooltip = "Session end, minutes since midnight (exchange time).")
+int      inpDiagBufferCap      = input.int(DIAG_BUFFER_CAP, "Diagnostics buffer size", minval = DIAG_BUFFER_CAP_MIN, maxval = DIAG_BUFFER_CAP, group = G_01_CORE, tooltip = "Diagnostics entries retained (bounded by the performance budget).")
+
+// -- Module enable toggles. ---------------------------------------------------
+bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.0.4.")
+bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.0.4.")
+bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.0.4.")
+bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.0.4.")
+bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.0.4.")
+bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.0.4.")
+bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.0.4.")
+bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.0.4.")
+bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.0.4.")
+bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.0.4.")
+bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.0.4.")
+bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.0.4.")
+bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.0.4.")
+bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.0.4.")
 
 
 // =============================================================================
@@ -496,15 +515,125 @@ errApplyValidation(Diagnostics diag, array<ValidationResult> results, LogLevel t
                 errWarn(diag, r.errorId, r.message, threshold, debugEnabled)
 
 // -----------------------------------------------------------------------------
-//  Core · cfg — configuration build / validate / accessor.
-//  TODO(M1.3): implement (builds the immutable Config from inputs).
+//  Core · cfg — configuration build / validate / accessor (M1.3).
+//  cfgBuild is the ONLY reader of input.*. Config is treated as immutable after
+//  build (enforced by convention; ADR-0008). Modules read it via cfgGet.
 // -----------------------------------------------------------------------------
 
+// cfgValidate(draft)   @internal
+//   Responsibility : Validate and normalize a draft Config, returning findings.
+//                    Recoverable issues are clamped in place; the M1.2 err
+//                    subsystem applies the policy (no duplicated validation).
+//   Parameters     : draft — Config (mutated: out-of-range scalars are clamped).
+//   Returns        : array<ValidationResult>.
+//   Determinism    : deterministic.  Errors: none (reports; does not raise).
+cfgValidate(Config draft) =>
+    array<ValidationResult> results = array.new<ValidationResult>(0)
+    // Fatal: an enabled session window must be well-formed (start before end).
+    if draft.sessionEnabled and draft.sessionStartMinute >= draft.sessionEndMinute
+        array.push(results, ValidationResult.new(ValidationSeverity.fatal, ERR_CFG_INVALID_SESSION, "session start must be before session end"))
+    // Recoverable: clamp the diagnostics buffer cap into its valid range.
+    int clampedCap = int(utilClamp(draft.diagBufferCap, DIAG_BUFFER_CAP_MIN, DIAG_BUFFER_CAP))
+    if clampedCap != draft.diagBufferCap
+        array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_CFG_DIAG_CAP_RANGE, "diagBufferCap out of range; clamped to " + str.tostring(clampedCap)))
+        draft.diagBufferCap := clampedCap
+    results
+
+// cfgBuild(diag)   @experimental
+//   Responsibility : Read inputs once, validate, and return the config snapshot.
+//                    The only place input.* is read (ADR-0008).
+//   Parameters     : diag — Diagnostics handle for recoverable warnings.
+//   Returns        : Config — immutable after this call (by convention).
+//   Determinism    : deterministic per run.
+//   Errors         : fatal — halts via errApplyValidation on invalid config.
+//   Note           : primaryTfClass is finalized by the lifecycle (M1.4), which
+//                    holds both the built Config and ctxTimeframe().
+cfgBuild(Diagnostics diag) =>
+    Config draft = Config.new()
+    draft.debugEnabled       := inpDebugEnabled
+    draft.logThreshold       := inpLogThreshold
+    draft.requireSupportedTf := inpRequireSupportedTf
+    draft.sessionEnabled     := inpSessionEnabled
+    draft.sessionStartMinute := inpSessionStart
+    draft.sessionEndMinute   := inpSessionEnd
+    draft.diagBufferCap      := inpDiagBufferCap
+    draft.enableCore         := inpEnableCore
+    draft.enableTrend        := inpEnableTrend
+    draft.enableMomentum     := inpEnableMomentum
+    draft.enableSr           := inpEnableSr
+    draft.enableStructure    := inpEnableStructure
+    draft.enableLiquidity    := inpEnableLiquidity
+    draft.enableOrderBlock   := inpEnableOrderBlock
+    draft.enableFvg          := inpEnableFvg
+    draft.enableSignal       := inpEnableSignal
+    draft.enableTrade        := inpEnableTrade
+    draft.enableRisk         := inpEnableRisk
+    draft.enableDashboard    := inpEnableDashboard
+    draft.enableAlerts       := inpEnableAlerts
+    draft.enableOptimize     := inpEnableOptimize
+    array<ValidationResult> results = cfgValidate(draft)
+    errApplyValidation(diag, results, draft.logThreshold, draft.debugEnabled)
+    draft
+
+// cfgGet(state)   @stable
+//   Responsibility : Return the cached, immutable Config from kernel state.
+//   Parameters     : state — KernelState holding the built Config.
+//   Returns        : Config.
+//   Determinism    : pure accessor.  Errors: none.
+//   Note           : takes the KernelState handle until the lifecycle (M1.4)
+//                    provides a parameter-less form.
+cfgGet(KernelState state) =>
+    state.config
+
 // -----------------------------------------------------------------------------
-//  Core · ctx — per-bar context (confirmed-bar / session / timeframe).
-//  TODO(M1.3): implement. Note: ctxHtfValue is reserved (docs/API.md) and is
-//  deferred until the first module requiring request.security (>= Module 02).
+//  Core · ctx — per-bar context (M1.3): confirmed-bar / session / timeframe.
+//  Strictly non-repainting: current-bar builtins only; NO request.security.
+//  ctxHtfValue is reserved (docs/API.md), deferred until a module needs
+//  request.security (>= Module 02).
 // -----------------------------------------------------------------------------
+
+// ctxTimeframe()   @internal
+//   Responsibility : Classify the chart timeframe (constant per run).
+//   Returns        : TimeframeContext (class + isSupportedPrimary).
+//   Determinism    : deterministic; non-repainting.  Errors: none.
+ctxTimeframe() =>
+    TimeframeClass cls = timeframe.isminutes and timeframe.multiplier == TF_M1_MINUTES ? TimeframeClass.m1 : timeframe.isminutes and timeframe.multiplier == TF_M5_MINUTES ? TimeframeClass.m5 : TimeframeClass.other
+    TimeframeContext.new(cls, cls == TimeframeClass.m1 or cls == TimeframeClass.m5)
+
+// ctxComputeSession(cfg)   @internal
+//   Responsibility : Determine session state for the current bar.
+//   Parameters     : cfg — Config (session settings).
+//   Returns        : SessionContext.
+//   Determinism    : deterministic per bar; non-repainting (current-bar time).
+//   Errors         : none.
+ctxComputeSession(Config cfg) =>
+    bool active = true
+    if cfg.sessionEnabled
+        int m = utilMinutesOfDay(time)
+        active := m >= cfg.sessionStartMinute and m < cfg.sessionEndMinute
+    SessionContext.new(active ? SessionState.active : SessionState.inactive, active)
+
+// ctxIsConfirmedBar()   @stable
+//   Responsibility : Whether the current bar is closed / confirmed.
+//   Returns        : bool — barstate.isconfirmed.
+//   Determinism    : deterministic; non-repainting.  Errors: none.
+ctxIsConfirmedBar() =>
+    barstate.isconfirmed
+
+// ctxIsNewBar()   @stable
+//   Responsibility : Whether this is the first execution of a new bar.
+//   Returns        : bool — barstate.isnew.
+//   Determinism    : deterministic; non-repainting.  Errors: none.
+ctxIsNewBar() =>
+    barstate.isnew
+
+// ctxBuild(cfg)   @experimental
+//   Responsibility : Assemble the per-bar context.
+//   Parameters     : cfg — Config.
+//   Returns        : BarContext (transient).
+//   Determinism    : deterministic per bar; non-repainting.  Errors: none.
+ctxBuild(Config cfg) =>
+    BarContext.new(bar_index, time, ctxIsConfirmedBar(), ctxIsNewBar(), ctxComputeSession(cfg), ctxTimeframe())
 
 // -----------------------------------------------------------------------------
 //  Core · state — single persistent KernelState.
@@ -535,9 +664,10 @@ errApplyValidation(Diagnostics diag, array<ValidationResult> results, LogLevel t
 // =============================================================================
 //  MAIN
 // -----------------------------------------------------------------------------
-//  No-op. Through M1.2 the util / log / err subsystems are DEFINED but not
-//  invoked. The single per-bar call site — `BarContext context = coreOnBar()` —
-//  is wired here in M1.4 once the lifecycle exists. Nothing executes this build.
+//  No-op. Through M1.3 the util / log / err / cfg / ctx subsystems are DEFINED
+//  but not invoked. The single per-bar call site — `BarContext context =
+//  coreOnBar()` — is wired here in M1.4 once the lifecycle exists. Nothing
+//  executes this build.
 // =============================================================================
 // TODO(M1.4): wire coreOnBar() here. No orders, plots, or calculations.
 
@@ -546,8 +676,8 @@ errApplyValidation(Diagnostics diag, array<ValidationResult> results, LogLevel t
 //  TODO — MODULE 01 MILESTONES
 // -----------------------------------------------------------------------------
 //    [x] M1.1  Enums, UDTs, constants, subsystem scaffolding   (v0.0.2)
-//    [x] M1.2  util / log / err (validation) subsystems        (v0.0.3, current)
-//    [ ] M1.3  cfg / ctx subsystems                            (v0.0.4)
+//    [x] M1.2  util / log / err (validation) subsystems        (v0.0.3)
+//    [x] M1.3  cfg / ctx subsystems                            (v0.0.4, current)
 //    [ ] M1.4  state / lifecycle / diagnostics / integration   (v0.1.0)
 //
 //  See docs/ROADMAP.md for the authoritative version timeline.

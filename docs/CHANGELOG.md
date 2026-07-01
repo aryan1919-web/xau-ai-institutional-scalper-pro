@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.0.4] - 2026-07-01
+
+Module 01 (Core Framework) — milestone **M1.3: configuration & context**.
+Subsystems are defined but not yet invoked (MAIN remains no-op). (The `v0.0.4` git
+tag is created after review.)
+
+### Added
+- **Configuration subsystem (`cfg`):** `cfgBuild` (the sole reader of `input.*`,
+  ADR-0008), `cfgGet` (public); `cfgValidate` (internal). Produces an immutable
+  `Config` snapshot; recoverable issues are clamped and the M1.2 `err` subsystem
+  applies the hybrid policy (no duplicated validation).
+- **Context subsystem (`ctx`):** `ctxBuild`, `ctxIsConfirmedBar`, `ctxIsNewBar`
+  (public); `ctxComputeSession`, `ctxTimeframe` (internal). Strictly non-repainting
+  (current-bar builtins only; `barstate.isnew` for new-bar detection). **Zero
+  `request.security`.** `ctxHtfValue` remains reserved (docs only).
+- **Core configuration inputs** (group *01 · Core Framework*): debug toggle, log
+  threshold (`input.enum`), require-supported-timeframe, session enable + start/end
+  minute-of-day, diagnostics buffer size — all read only by `cfgBuild`.
+- Constants: `DIAG_BUFFER_CAP_MIN`, `MINUTES_PER_DAY`, `TF_M1_MINUTES`, `TF_M5_MINUTES`.
+
+### Changed
+- `PROJECT_VERSION` `0.0.3` → `0.0.4`.
+- `Config`: session window is now integer minute-of-day bounds
+  (`sessionStartMinute` / `sessionEndMinute`) instead of a session string — a
+  `series`-typed field cannot be passed to `time(tf, session)`, and integer bounds
+  reuse `utilMinutesOfDay` and give a clean `start < end` validation.
+- `docs/API.md`: `cfg`/`ctx` moved to *implemented* (Since 0.0.4); `cfgGet` documented
+  as taking a `KernelState` handle until the M1.4 lifecycle.
+
+### Notes
+- No trading behavior: no entries/exits/orders, `request.security`, `ta.*`, or plots.
+- Subsystems defined but not called; wired via the lifecycle in M1.4.
+- `primaryTfClass` and the `requireSupportedTf` enforcement are finalized by the
+  M1.4 lifecycle (which holds both `Config` and `ctxTimeframe`).
+- Remaining Module 01 milestone: `0.1.0` (M1.4 — complete).
+
 ## [0.0.3] - 2026-07-01
 
 Module 01 (Core Framework) — milestone **M1.2: utility, logging, validation**.
@@ -84,7 +120,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.0.3...HEAD
+[Unreleased]: https://example.com/compare/v0.0.4...HEAD
+[0.0.4]: https://example.com/compare/v0.0.3...v0.0.4
 [0.0.3]: https://example.com/compare/v0.0.2...v0.0.3
 [0.0.2]: https://example.com/compare/v0.0.1...v0.0.2
 [0.0.1]: https://example.com/releases/tag/v0.0.1

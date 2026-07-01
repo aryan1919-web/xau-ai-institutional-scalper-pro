@@ -3,7 +3,7 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** In implementation — **M1.1 (`v0.0.2`) + M1.2 (`v0.0.3`) done**; M1.3–M1.4 pending · **Target version:** `0.1.0` · **Depends on:** none (foundation)
+> **Status:** In implementation — **M1.1 (`v0.0.2`) + M1.2 (`v0.0.3`) + M1.3 (`v0.0.4`) done**; M1.4 pending · **Target version:** `0.1.0` · **Depends on:** none (foundation)
 
 This document is the authoritative **architecture** for the Core Framework. It is
 design only — no Pine code exists yet. Implementation is a separate, later,
@@ -241,8 +241,8 @@ validation. Format `CORE-<AREA>-<NNN>` (see `err` subsystem, ADR-0010).
 - [x] **M1.2 (`v0.0.3`)** — `util` (clamp, safeDiv, normalize, isValidNumber, roundToTick; + internal minutesOfDay, formatFloat).
 - [x] **M1.2 (`v0.0.3`)** — `log` subsystem (bounded O(1) ring buffer, level/debug gating).
 - [x] **M1.2 (`v0.0.3`)** — `err` subsystem (fatal/warn/assert, hybrid validation) + Error-ID registry.
-- [ ] **M1.3 (`v0.0.4`)** — `cfg` subsystem (build, validate, get; immutable `Config`).
-- [ ] **M1.3 (`v0.0.4`)** — `ctx` subsystem (build, confirmed-bar, new-bar, session, timeframe).
+- [x] **M1.3 (`v0.0.4`)** — `cfg` subsystem (build, validate, get; immutable `Config`; sole `input.*` reader).
+- [x] **M1.3 (`v0.0.4`)** — `ctx` subsystem (build, confirmed-bar, new-bar, session, timeframe; non-repainting).
       `ctxHtfValue` **reserved** (docs only) until first module needing `request.security`.
 - [ ] **M1.4 (`v0.1.0`)** — `state` subsystem (init, update, get).
 - [ ] **M1.4 (`v0.1.0`)** — `core` orchestrator (`coreInit`, `coreOnBar`) + MAIN integration.
