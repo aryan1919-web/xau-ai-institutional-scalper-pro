@@ -6,7 +6,7 @@ implementation may occur without a corresponding specification here.** Code that
 disagrees with this document is a defect in the code or the document — reconcile
 before proceeding.
 
-- **Status:** Draft (framework phase, `v0.0.1`)
+- **Status:** Draft (`v0.2.0`) — Module 01 (Core) and Module 02 (Trend Engine) complete
 - **Owner:** Project architect
 - **Related:** [ARCHITECTURE.md](ARCHITECTURE.md), [ROADMAP.md](ROADMAP.md),
   [DECISIONS.md](DECISIONS.md)

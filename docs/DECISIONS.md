@@ -182,3 +182,31 @@ Statuses: `Proposed` · `Accepted` · `Superseded` · `Deprecated`.
   budget stays enforceable (ADR-0013); modules depend only on the contract, never the
   mechanism (reinforces ADR-0011). Supersedes nothing; formalizes and freezes ADR-0011 for the
   now-implemented `ctxHtfValue`.
+
+---
+
+## ADR-0016 — Frozen Trend Engine API and `TrendState` ABI
+
+- **Status:** Accepted
+- **Context:** Module 02 (Trend Engine) is complete at `v0.2.0`. Downstream modules (Momentum,
+  Market Structure, and especially the Signal Engine, Module 09) will consume the trend through a
+  fixed surface. That surface must be stable and formula-agnostic so the trend algorithm can be
+  replaced without breaking consumers, and so no implementation detail leaks into the contract.
+- **Decision:** At `v0.2.0` the following Trend Engine surface is promoted to `@stable` and
+  **frozen**; changing or renaming any of it requires a **new ADR** (and a SemVer review):
+  - **Public functions:** `trendEvaluate(state, context)` and the accessors `trendDirection`,
+    `trendStrength`, `trendConfidence`, `trendQuality`, `trendPhase`, `trendIsActive`,
+    `trendIsAligned`.
+  - **`TrendState` ABI:** the immutable per-bar snapshot exposes **normalized outputs only** —
+    `direction`, `strengthBand`, `strength`, `confidence`, `quality`, `phase`, `aligned`,
+    `isActive`, `barIndex`. Raw implementation values (EMA/ATR/slope/separation/volatility) are
+    **forbidden** in `TrendState`; the formula stays behind the `@internal` helpers (R2/R6/R7).
+  - **Ownership invariants (unchanged, now permanent):** `trendEvaluate` is the sole producer of
+    `TrendState` (`TrendState.new()` appears nowhere else) and the sole reader/updater of
+    `KernelState.trendMemory`. `TrendTimeframeView` stays an internal transport, never public.
+  - HTF access continues to obey [ADR-0015](#adr-0015--frozen-htf-api-contract-ctxhtfvalue): the
+    single executable `ctxHtfValue` call site and the single `request.security` are preserved.
+- **Consequences:** Consumers can depend on a stable, explainable trend contract; the algorithm
+  remains replaceable behind it. New trend *outputs* would be additive ABI changes gated by a
+  future ADR + SemVer bump. Reinforces ADR-0003 (explainable), ADR-0012 (stability levels), and
+  ADR-0013 (performance budgets). Supersedes nothing.

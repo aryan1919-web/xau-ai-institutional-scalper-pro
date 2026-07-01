@@ -10,21 +10,23 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.1.4  (Module 02 · M2.4 — multi-timeframe synthesis)
+//  Version      : 0.2.0  (Module 02 · M2.5 — Trend Engine complete)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
 //  STATUS       : Module 01 (Core Framework) frozen at v0.1.0. Module 02 (Trend
-//                 Engine) in progress. M2.4 adds MULTI-TIMEFRAME synthesis:
-//                   - one REPLACEABLE signed-strength formula runs on the chart
-//                     directly and on the HTF via a single ctxHtfValue call.
-//                   - trendChartView / trendHtfView -> trendMergeViews compute
-//                     alignment and now-independent confidence/quality.
-//                   - trendEvaluate() still the sole producer of TrendState and
-//                     sole toucher of trendMemory (R8/R10).
-//                 ctxHtfValue is now invoked (exactly ONE call site; HTF usage 1).
-//                 request.security text stays inside ctxHtfValue only (count = 1).
-//                 NO signals/entries/exits/orders, no plots, no alerts.
+//                 Engine) COMPLETE at v0.2.0. M2.5 finalizes the module:
+//                   - public Trend API promoted to @stable and FROZEN; the
+//                     TrendState ABI is locked (ADR-0016).
+//                   - debug-only trendSelfCheck asserts the TrendState ABI
+//                     invariants each bar (diagnostics; read-only).
+//                   - config-consistency validation added (TREND-CFG-004:
+//                     flatThreshold <= strengthThreshold).
+//                 trendEvaluate() remains the sole producer of TrendState and the
+//                 sole toucher of trendMemory (R8/R10). ctxHtfValue is invoked at
+//                 exactly ONE call site; request.security lives inside ctxHtfValue
+//                 only (count = 1). NO signals/entries/exits/orders, no plots,
+//                 no alerts — the trend is computed but never acted upon.
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -71,7 +73,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.1.4"
+const string PROJECT_VERSION = "0.2.0"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -125,6 +127,7 @@ const string ERR_ASSERT_FAILED        = "CORE-ASSERT-001"// debug assertion fail
 const string ERR_TREND_HTF_NOT_HIGHER  = "TREND-CFG-001" // HTF < chart timeframe (checked when MTF on)
 const string ERR_TREND_FAST_GE_SLOW    = "TREND-CFG-002" // fast length >= slow length
 const string ERR_TREND_THRESHOLD_RANGE = "TREND-CFG-003" // threshold out of [0, 1]
+const string ERR_TREND_THRESHOLD_ORDER = "TREND-CFG-004" // flatThreshold > strengthThreshold (bands unordered)
 
 // -- Input group titles (kept as constants to avoid duplicated string literals).
 const string G_01_CORE       = "01 · Core Framework"
@@ -360,7 +363,7 @@ int      inpDiagBufferCap      = input.int(DIAG_BUFFER_CAP, "Diagnostics buffer 
 
 // -- Module enable toggles. ---------------------------------------------------
 bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.1.0.")
-bool inpEnableTrend      = input.bool(false, "Enable Trend Engine", group = G_02_TREND, tooltip = "Master enable for the Trend Engine (Module 02). Configuration only in v0.1.2; trend logic arrives in M2.3+.")
+bool inpEnableTrend      = input.bool(false, "Enable Trend Engine", group = G_02_TREND, tooltip = "Master enable for the Trend Engine (Module 02). The trend is computed but not yet acted upon (no signals/orders until later modules).")
 bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.1.0.")
 bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.1.0.")
 bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.1.0.")
@@ -648,6 +651,12 @@ cfgValidate(Config draft) =>
         if clampedStrength != draft.trend.strengthThreshold
             array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_TREND_THRESHOLD_RANGE, "trend strengthThreshold out of [0,1]; clamped"))
             draft.trend.strengthThreshold := clampedStrength
+        // Recoverable: the flat band must not exceed the active threshold, else the
+        // strength bands are unordered (the weak band would be unreachable). Clamp
+        // flatThreshold down to strengthThreshold (checked after both are in [0,1]).
+        if draft.trend.flatThreshold > draft.trend.strengthThreshold
+            array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_TREND_THRESHOLD_ORDER, "trend flatThreshold > strengthThreshold; clamped to strengthThreshold"))
+            draft.trend.flatThreshold := draft.trend.strengthThreshold
     results
 
 // cfgBuild(diag)   @experimental
@@ -894,8 +903,10 @@ coreOnBar(KernelState state) =>
 
 
 // =============================================================================
-//  MODULE 02 — TREND ENGINE (multi-timeframe synthesis, M2.4)
+//  MODULE 02 — TREND ENGINE (COMPLETE, M2.5 · v0.2.0)
 // -----------------------------------------------------------------------------
+//  The public Trend API (trendEvaluate + accessors) and the TrendState ABI are
+//  FROZEN at v0.2.0 (ADR-0016); changes require a new ADR.
 //  Produces the immutable TrendState (the ABI). One REPLACEABLE signed-strength
 //  formula is evaluated on the chart directly and on the HTF through the single
 //  Core wrapper ctxHtfValue; trendChartView/trendHtfView -> trendMergeViews then
@@ -991,7 +1002,7 @@ trendClassifyStrength(float strength, TrendConfig tcfg) =>
 trendClassifyPhase(Direction curDir, float curStrength, Direction prevDir, float prevStrength, int barsInTrend, TrendConfig tcfg) =>
     curDir == Direction.flat ? TrendPhase.absent : prevDir == Direction.flat ? TrendPhase.forming : prevDir != curDir ? TrendPhase.reversing : curStrength < prevStrength ? TrendPhase.weakening : barsInTrend >= tcfg.confirmBars ? TrendPhase.established : TrendPhase.forming
 
-// trendEvaluate(state, context)   @experimental
+// trendEvaluate(state, context)   @stable  (FROZEN at v0.2.0 — ADR-0016)
 //   Responsibility : Orchestrate the chart-TF trend and return the immutable
 //                    TrendState. The ONLY producer of TrendState and the ONLY
 //                    reader/updater of state.trendMemory (R8/R9/R10).
@@ -1026,7 +1037,7 @@ trendEvaluate(KernelState state, BarContext context) =>
     state.trendMemory.previousStrength  := strength
     ts
 
-// -- Trend accessors (pure, read-only; Experimental until 0.2.0). All @experimental.
+// -- Trend accessors (pure, read-only). All @stable — FROZEN at v0.2.0 (ADR-0016).
 // trendDirection(ts)  — discrete direction.
 trendDirection(TrendState ts) => ts.direction
 // trendStrength(ts)   — normalized strength [0,1].
@@ -1041,6 +1052,21 @@ trendPhase(TrendState ts) => ts.phase
 trendIsActive(TrendState ts) => ts.isActive
 // trendIsAligned(ts)  — chart/HTF agreement (MTF; true when MTF off / HTF invalid).
 trendIsAligned(TrendState ts) => ts.aligned
+
+// trendSelfCheck(ts, tcfg)   @internal  (debug only)
+//   Responsibility : Assert the TrendState ABI invariants (normalized ranges +
+//                    output consistency) once per bar in debug mode. Read-only —
+//                    never constructs a TrendState nor touches TrendMemory. Only
+//                    called from MAIN behind config.debugEnabled (no-op otherwise).
+//   Parameters     : ts — the bar's TrendState; tcfg — TrendConfig (thresholds).
+//   Returns        : void.  Determinism: pure; O(1).
+//   Errors         : raises via errAssert when an ABI invariant is violated.
+trendSelfCheck(TrendState ts, TrendConfig tcfg) =>
+    errAssert(trendStrength(ts)   >= UTIL_NORMALIZED_MIN and trendStrength(ts)   <= UTIL_NORMALIZED_MAX, ERR_ASSERT_FAILED, "trend strength normalized [0,1]", true)
+    errAssert(trendConfidence(ts) >= UTIL_NORMALIZED_MIN and trendConfidence(ts) <= UTIL_NORMALIZED_MAX, ERR_ASSERT_FAILED, "trend confidence normalized [0,1]", true)
+    errAssert(trendQuality(ts)    >= UTIL_NORMALIZED_MIN and trendQuality(ts)    <= UTIL_NORMALIZED_MAX, ERR_ASSERT_FAILED, "trend quality normalized [0,1]", true)
+    errAssert(not trendIsActive(ts) or trendDirection(ts) != Direction.flat, ERR_ASSERT_FAILED, "active trend is directional", true)
+    errAssert(not trendIsActive(ts) or trendStrength(ts) >= tcfg.strengthThreshold, ERR_ASSERT_FAILED, "active trend meets strength threshold", true)
 
 
 // =============================================================================
@@ -1071,6 +1097,10 @@ BarContext context = coreOnBar(coreState)
 // Module 02 — compute the multi-timeframe trend each bar. `trend` is the seam the
 // Signal Engine (09) etc. will consume; unused for now (no signals/orders/plots).
 TrendState trend = trendEvaluate(coreState, context)
+// Debug-only: assert the TrendState ABI invariants (diagnostics; read-only, no-op
+// in production). Mirrors the Core self-tests; never mutates state or emits output.
+if cfgGet(coreState).debugEnabled
+    trendSelfCheck(trend, cfgGet(coreState).trend)
 
 
 // =============================================================================
@@ -1087,11 +1117,14 @@ TrendState trend = trendEvaluate(coreState, context)
 
 
 // =============================================================================
-//  MODULE 02 — MILESTONE PROGRESS (Trend Engine)
+//  MODULE 02 — MILESTONE HISTORY (COMPLETE)
 // -----------------------------------------------------------------------------
 //    [x] M2.1  Core ctxHtfValue HTF primitive                  (v0.1.1)
 //    [x] M2.2  Trend types, inputs, configuration              (v0.1.2)
 //    [x] M2.3  Chart-timeframe trend model                     (v0.1.3)
-//    [x] M2.4  Multi-timeframe synthesis + confidence/quality  (v0.1.4, current)
-//    [ ] M2.5  Integration + finalize (Trend API -> Stable)    (v0.2.0)
+//    [x] M2.4  Multi-timeframe synthesis + confidence/quality  (v0.1.4)
+//    [x] M2.5  Integration + finalize (Trend API -> Stable)    (v0.2.0)
+//
+//  Module 02 (Trend Engine) is COMPLETE at v0.2.0. The public Trend API and the
+//  TrendState ABI are FROZEN (ADR-0016); see docs/ROADMAP.md for the timeline.
 // =============================================================================

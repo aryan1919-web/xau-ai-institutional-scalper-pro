@@ -3,7 +3,8 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** In implementation — M2.1 (`v0.1.1`) + M2.2 (`v0.1.2`) + M2.3 (`v0.1.3`) + M2.4 (`v0.1.4`) done · **Target version:** `0.2.0` · **Depends on:** Module 01
+> **Status:** ✅ **Complete at `v0.2.0`** (M2.1–M2.5) · Public Trend API + `TrendState` ABI **frozen**
+> ([ADR-0016](../../../docs/DECISIONS.md)) · **Depends on:** Module 01
 
 ## Overview
 
@@ -53,7 +54,8 @@ Types + configuration only — no trend logic yet.
   `transitionCounter`.
 - **Validation** (in `cfgValidate`, `ValidationResult` only): `TREND-CFG-001` HTF < chart when MTF
   on (fatal, active since `0.1.4`), `TREND-CFG-002` fast ≥ slow (fatal), `TREND-CFG-003` threshold
-  out of `[0,1]` (recoverable).
+  out of `[0,1]` (recoverable), `TREND-CFG-004` flatThreshold > strengthThreshold (recoverable,
+  since `0.2.0`).
 
 ## Chart-timeframe model (M2.3, v0.1.3)
 
@@ -66,7 +68,7 @@ Types + configuration only — no trend logic yet.
 - `trendClassifyStrength` maps strength → band; `trendClassifyPhase` derives the lifecycle phase
   from current values + the previous-bar memory (stateless — memory passed as parameters, R10).
 - Pure accessors: `trendDirection/Strength/Confidence/Quality/Phase/IsActive/IsAligned`
-  (Experimental until `v0.2.0`, R5).
+  (**Stable and frozen** at `v0.2.0`, ADR-0016).
 
 ## Multi-timeframe synthesis (M2.4, v0.1.4)
 
@@ -87,6 +89,25 @@ Types + configuration only — no trend logic yet.
 - `TrendTimeframeView` remains an **internal transport** only — never part of the public API; raw
   EMA/ATR/slope values never reach `TrendState` (R6).
 
+## Finalization & API freeze (M2.5, v0.2.0)
+
+Module 02 is **complete**. M2.5 is stabilization/diagnostics/documentation only — **no** behavior
+change, no signals, no orders, no plots, no alerts.
+
+- **API freeze (ADR-0016):** `trendEvaluate` and the seven accessors are promoted to `@stable` and
+  **frozen**; the `TrendState` ABI is **locked** (normalized outputs only — raw
+  EMA/ATR/slope/separation/volatility fields stay forbidden). Renaming or redesigning any of them
+  requires a new ADR.
+- **Diagnostics:** `trendSelfCheck` (`@internal`, debug-only) asserts the `TrendState` ABI
+  invariants each bar (normalized ranges; `isActive` ⇒ directional and ≥ threshold) via `errAssert`.
+  Read-only — it never constructs a `TrendState` or touches `TrendMemory`; wired in MAIN behind
+  `config.debugEnabled` (no-op in production). Mirrors the Core self-tests.
+- **Validation:** `TREND-CFG-004` (recoverable) enforces `flatThreshold ≤ strengthThreshold` so the
+  strength bands stay ordered.
+- **Ownership invariants (now permanent):** `trendEvaluate` is the sole producer of `TrendState`
+  and the sole toucher of `KernelState.trendMemory`; `ctxHtfValue` remains the only
+  `request.security` wrapper with a single executable call site.
+
 ## Design decisions
 
 - Fast/slow length inputs are **formula-agnostic** lookback slots (labeled generically, not
@@ -106,10 +127,10 @@ Types + configuration only — no trend logic yet.
 
 - _None yet._
 
-## Future implementation checklist
+## Implementation checklist (complete)
 
-- [ ] Define trend state representation.
-- [ ] Deterministic classification with named factors.
-- [ ] Non-repainting HTF handling.
-- [ ] Expose observation to Signal Engine.
-- [ ] Documentation: update SPECIFICATION, ARCHITECTURE, API, CHANGELOG.
+- [x] Define trend state representation (`TrendState`, M2.2).
+- [x] Deterministic classification with named factors (chart-TF M2.3; MTF synthesis M2.4).
+- [x] Non-repainting HTF handling (via Core `ctxHtfValue`, M2.4).
+- [x] Expose observation to Signal Engine (frozen public API + `TrendState` ABI, M2.5/ADR-0016).
+- [x] Documentation: SPECIFICATION, API, CHANGELOG, ROADMAP, DECISIONS synchronized.

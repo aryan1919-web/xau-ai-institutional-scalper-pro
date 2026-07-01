@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.2.0] - 2026-07-01
+
+Module 02 (Trend Engine) **complete** — milestone **M2.5: stabilization, finalization & API
+freeze**. The Trend Engine is functionally done; this milestone freezes its public surface and
+adds diagnostics/validation. Still no signals/orders/plots/alerts. **MINOR bump** — the Trend API
+is promoted from Experimental to **Stable** (per the Semantic Versioning Policy). (The `v0.2.0`
+git tag is created manually after review.)
+
+### Added
+- **`trendSelfCheck` (`@internal`, debug-only):** asserts the `TrendState` ABI invariants
+  (normalized `strength`/`confidence`/`quality` ranges; `isActive` ⇒ directional and ≥ threshold)
+  once per bar via `errAssert`. Read-only — never constructs a `TrendState` or touches
+  `TrendMemory`; wired in MAIN behind `config.debugEnabled` (no-op in production).
+- **Validation `TREND-CFG-004` (recoverable):** `flatThreshold` must be ≤ `strengthThreshold`,
+  else the strength bands are unordered (weak band unreachable); clamped down with a warning.
+- **[ADR-0016](DECISIONS.md):** freezes the Trend Engine public API and the `TrendState` ABI.
+
+### Changed
+- `PROJECT_VERSION` `0.1.4` → `0.2.0`.
+- **Trend public API promoted to `@stable` and frozen** (ADR-0016): `trendEvaluate` and the
+  accessors `trendDirection`/`trendStrength`/`trendConfidence`/`trendQuality`/`trendPhase`/
+  `trendIsActive`/`trendIsAligned`. Renaming/redesigning any of them now requires a new ADR.
+- `TrendState` ABI **locked** — normalized outputs only; raw EMA/ATR/slope/separation/volatility
+  fields remain forbidden.
+- Module 02 milestone banner marked COMPLETE; `docs/ROADMAP.md` current marker moved to `0.2.0`.
+
+### Notes
+- **No behavior change** to the trend computation itself — M2.5 is stabilization, diagnostics,
+  validation and documentation only. No new public trading logic, signals, entries/exits/orders,
+  plots or alerts.
+- **Invariants preserved:** exactly one executable `request.security` (inside `ctxHtfValue`);
+  exactly one executable `ctxHtfValue` call (`trendHtfView`); `TrendState.new()` only inside
+  `trendEvaluate`; `TrendMemory` touched only by `trendEvaluate`; `TrendTimeframeView` internal.
+  Deterministic, non-repainting, O(1) per bar; performance budgets unchanged.
+- Next: M3 (`0.3.0`) — Module 03 Momentum Engine.
+
 ## [0.1.4] - 2026-07-01
 
 Module 02 (Trend Engine) — milestone **M2.4: multi-timeframe synthesis**. The chart-timeframe
@@ -296,7 +332,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.1.4...HEAD
+[Unreleased]: https://example.com/compare/v0.2.0...HEAD
+[0.2.0]: https://example.com/compare/v0.1.4...v0.2.0
 [0.1.4]: https://example.com/compare/v0.1.3...v0.1.4
 [0.1.3]: https://example.com/compare/v0.1.2...v0.1.3
 [0.1.2]: https://example.com/compare/v0.1.1...v0.1.2
