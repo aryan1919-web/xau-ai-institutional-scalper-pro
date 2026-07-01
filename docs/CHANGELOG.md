@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.0.3] - 2026-07-01
+
+Module 01 (Core Framework) — milestone **M1.2: utility, logging, validation**.
+Subsystems are defined but not yet invoked (MAIN remains no-op). (The `v0.0.3` git
+tag is created after review.)
+
+### Added
+- **Utility subsystem (`util`):** `utilIsValidNumber`, `utilClamp`, `utilSafeDiv`,
+  `utilNormalize`, `utilRoundToTick` (public); `utilMinutesOfDay`, `utilFormatFloat`
+  (internal). Pure and deterministic.
+- **Logging subsystem (`log`):** bounded **O(1)** diagnostics ring buffer —
+  `logWrite`, `logDrain`, `logClear` (public); `logShouldEmit`, `logFormat`,
+  `logLevelRank` (internal). Level + debug gated.
+- **Error / validation subsystem (`err`):** `errRaiseFatal`, `errWarn`, `errAssert`,
+  `errApplyValidation` (public); `errFormat` (internal). Hybrid policy — first fatal
+  halts, warnings are logged.
+- **Error-ID registry:** `ERR_CFG_UNSUPPORTED_TF`, `ERR_CFG_INVALID_SESSION`,
+  `ERR_CFG_DIAG_CAP_RANGE`, `ERR_STATE_REINIT`, `ERR_ASSERT_FAILED`, `ERR_NONE`.
+- **Utility constants:** `UTIL_NORMALIZED_MIN/MAX`, `MINUTES_PER_HOUR`, `DECIMAL_BASE`.
+
+### Changed
+- `PROJECT_VERSION` `0.0.2` → `0.0.3`.
+- `docs/API.md`: replaced the planned-only catalog with implemented `util`/`log`/`err`
+  signatures (Since 0.0.3); removed the obsolete M0 placeholder utilities; documented the
+  current explicit-parameter forms (Config/KernelState wiring lands in M1.4).
+
+### Notes
+- No trading behavior: no entries/exits/orders, `request.security`, `ta.*`, or plots.
+- Subsystems are defined but not called; they are wired via the lifecycle in M1.4.
+- Remaining Module 01 milestones: `0.0.4` (M1.3), `0.1.0` (M1.4 — complete).
+
 ## [0.0.2] - 2026-07-01
 
 Module 01 (Core Framework) — milestone **M1.1: types & scaffolding**. Declarations only;
@@ -53,6 +84,7 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.0.2...HEAD
+[Unreleased]: https://example.com/compare/v0.0.3...HEAD
+[0.0.3]: https://example.com/compare/v0.0.2...v0.0.3
 [0.0.2]: https://example.com/compare/v0.0.1...v0.0.2
 [0.0.1]: https://example.com/releases/tag/v0.0.1

@@ -5,7 +5,7 @@ document grows alongside the code: every public function must be listed here wit
 its responsibility, parameters, return value, and notes (see
 [STYLE_GUIDE.md](STYLE_GUIDE.md) for documentation rules).
 
-- **Status:** Framework phase (`v0.0.1`).
+- **Status:** Module 01 in progress (`v0.0.3`, M1.2 — utility / logging / validation implemented).
 - **Scope:** Only functions intended for reuse across modules are "public" and
   documented here. Private, single-use helpers are documented inline.
 
@@ -41,62 +41,69 @@ Each entry uses this shape:
 - Notes          : repainting considerations, limits, caveats.
 ```
 
-## Placeholder utilities (v0.0.1)
+## Module 01 — Core Framework
 
-These are framework stubs with no trading logic. Signatures are provisional.
-
-### isFrameworkOnly()
-- Responsibility : Report whether this build is framework-only (no logic).
-- Parameters     : none.
-- Returns        : `bool` — always `true` in `v0.0.1`.
-- Determinism    : deterministic; no state.
-- Notes          : Self-description helper; removed or repurposed once modules land.
-
-### projectVersion()
-- Responsibility : Expose the compiled project version string.
-- Parameters     : none.
-- Returns        : `string` — value of `PROJECT_VERSION`.
-- Determinism    : deterministic; no state.
-- Notes          : Accessor only.
-
-### noop()
-- Responsibility : Explicit no-operation seam.
-- Parameters     : none.
-- Returns        : `na` (void by design).
-- Determinism    : deterministic; no state.
-- Notes          : Placeholder pattern for future void utilities.
-
-## Module 01 — Core Framework (planned API)
-
-Architecture-approved public surface for the Core Framework. Signatures are the
-design contract; bodies are implemented in a later, separately-approved task. See
+Implemented incrementally across milestones M1.1–M1.4. *Implemented* signatures are
+live in [`../src/MASTER_STRATEGY.pine`](../src/MASTER_STRATEGY.pine); *Planned* rows are
+the design contract. See
 [../src/modules/01-core-framework/README.md](../src/modules/01-core-framework/README.md).
 
-| Function | Signature | Returns | Level | Responsibility |
-|----------|-----------|---------|-------|----------------|
-| `cfgBuild` | `cfgBuild()` | `Config` | Experimental | Read inputs, validate, return an immutable config snapshot. |
-| `cfgGet` | `cfgGet()` | `Config` | Stable | Accessor for the cached config in `KernelState`. |
-| `ctxBuild` | `ctxBuild(config)` | `BarContext` | Experimental | Compute the per-bar context. |
-| `ctxIsConfirmedBar` | `ctxIsConfirmedBar()` | `bool` | Stable | True on confirmed bars (`barstate.isconfirmed`). |
-| `ctxIsNewBar` | `ctxIsNewBar()` | `bool` | Stable | True on the first tick of a new bar. |
-| `ctxSessionState` | `ctxSessionState(config)` | `SessionState` | Experimental | Current session state. |
-| `ctxHtfValue` | `ctxHtfValue(symbol, timeframe, expr)` | `<series>` | Stable | Non-repainting HTF read (`barmerge.lookahead_off`, confirmed). |
-| `utilClamp` | `utilClamp(value, lo, hi)` | `float` | Stable | Clamp a value to `[lo, hi]`. |
-| `utilSafeDiv` | `utilSafeDiv(num, den, fallback)` | `float` | Stable | Division guarded against zero/`na`. |
-| `utilNormalize` | `utilNormalize(value, lo, hi)` | `float` | Stable | Scale a value to `0..1`. |
-| `utilIsValidNumber` | `utilIsValidNumber(value)` | `bool` | Stable | Finite, non-`na` check. |
-| `stateInit` | `stateInit(config)` | `KernelState` | Experimental | Initialize the persistent kernel on the first bar. |
-| `stateUpdate` | `stateUpdate(context)` | `void` | Experimental | Advance persistent state for the current bar. |
-| `errRaiseFatal` | `errRaiseFatal(message)` | `never` | Stable | Halt via `runtime.error` with a descriptive message. |
-| `errWarn` | `errWarn(message)` | `void` | Stable | Record a non-fatal diagnostic warning. |
-| `errApplyValidation` | `errApplyValidation(results)` | `void` | Experimental | Apply the hybrid validation policy (fatal → halt; scalar → clamp+warn). |
-| `logWrite` | `logWrite(level, message)` | `void` | Stable | Append a diagnostic entry (gated by debug flag + level). |
-| `logDrain` | `logDrain()` | `array<LogEntry>` | Experimental | Return buffered diagnostics for Dashboard/Optimization. |
-| `coreInit` | `coreInit()` | `void` | Stable | First-bar setup of config + kernel state. |
-| `coreOnBar` | `coreOnBar()` | `BarContext` | Stable | Per-bar seam that modules 02–14 consume. |
+> **Milestone note (M1.2):** Config (M1.3) and `KernelState` (M1.4) are not yet wired,
+> so the logging / validation functions take their gating context — a `Diagnostics`
+> handle, the `threshold` level, and `debugEnabled` — as **explicit parameters**. The
+> M1.4 lifecycle will supply these from the cached `Config` / `KernelState`, so later
+> modules call the simpler forms. These signatures are therefore `@stable` in intent
+> but may gain convenience wrappers at M1.4.
 
-**Internal helpers** (not cross-module callable): `cfgValidate`, `ctxComputeSession`,
-`logShouldEmit`, `errFormat`, `stateGet`.
+### Implemented — utility (`util`) · Since 0.0.3
+
+| Function | Signature | Returns | Level |
+|----------|-----------|---------|-------|
+| `utilIsValidNumber` | `utilIsValidNumber(value)` | `bool` | Stable |
+| `utilClamp` | `utilClamp(value, lo, hi)` | `float` | Stable |
+| `utilSafeDiv` | `utilSafeDiv(num, den, fallback)` | `float` | Stable |
+| `utilNormalize` | `utilNormalize(value, lo, hi)` | `float` (0..1) | Stable |
+| `utilRoundToTick` | `utilRoundToTick(price)` | `float` | Stable |
+
+### Implemented — logging (`log`) · Since 0.0.3
+
+| Function | Signature | Returns | Level |
+|----------|-----------|---------|-------|
+| `logWrite` | `logWrite(diag, level, moduleId, errorId, message, threshold, debugEnabled)` | `void` | Stable |
+| `logDrain` | `logDrain(diag)` | `array<LogEntry>` | Experimental |
+| `logClear` | `logClear(diag)` | `void` | Experimental |
+
+### Implemented — error / validation (`err`) · Since 0.0.3
+
+| Function | Signature | Returns | Level |
+|----------|-----------|---------|-------|
+| `errRaiseFatal` | `errRaiseFatal(errorId, message)` | never (halts) | Stable |
+| `errWarn` | `errWarn(diag, errorId, message, threshold, debugEnabled)` | `void` | Stable |
+| `errAssert` | `errAssert(condition, errorId, message, debugEnabled)` | `void` | Stable |
+| `errApplyValidation` | `errApplyValidation(diag, results, threshold, debugEnabled)` | `void` | Experimental |
+
+**Internal helpers (M1.2, not cross-module callable):** `utilMinutesOfDay`,
+`utilFormatFloat`, `logLevelRank`, `logShouldEmit`, `logFormat`, `errFormat`.
+`logLevelRank` is a single-source severity ranking that keeps `logShouldEmit` free of
+duplicated `switch` logic (no-duplication rule).
+
+### Planned — configuration / context / state / lifecycle
+
+| Function | Signature | Returns | Level | Milestone |
+|----------|-----------|---------|-------|-----------|
+| `cfgBuild` | `cfgBuild()` | `Config` | Experimental | M1.3 |
+| `cfgGet` | `cfgGet()` | `Config` | Stable | M1.3 |
+| `ctxBuild` | `ctxBuild(config)` | `BarContext` | Experimental | M1.3 |
+| `ctxIsConfirmedBar` | `ctxIsConfirmedBar()` | `bool` | Stable | M1.3 |
+| `ctxIsNewBar` | `ctxIsNewBar()` | `bool` | Stable | M1.3 |
+| `ctxSessionState` | `ctxSessionState(config)` | `SessionState` | Experimental | M1.3 |
+| `ctxHtfValue` | `ctxHtfValue(symbol, timeframe, expr)` | `<series>` | Stable | **Reserved** — deferred until the first module needing `request.security` (≥ M02) |
+| `stateInit` | `stateInit(config)` | `KernelState` | Experimental | M1.4 |
+| `stateUpdate` | `stateUpdate(context)` | `void` | Experimental | M1.4 |
+| `coreInit` | `coreInit()` | `void` | Stable | M1.4 |
+| `coreOnBar` | `coreOnBar()` | `BarContext` | Stable | M1.4 |
+
+Planned internal helpers: `cfgValidate`, `ctxComputeSession`, `stateGet`.
 
 ## Other module public functions
 

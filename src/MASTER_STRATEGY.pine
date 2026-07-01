@@ -10,20 +10,20 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.0.2  (Module 01 · M1.1 — types & scaffolding)
+//  Version      : 0.0.3  (Module 01 · M1.2 — utility, logging, validation)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
-//  STATUS       : FRAMEWORK ONLY — Module 01 (Core Framework), milestone M1.1.
-//                 This build contains ONLY declarations and scaffolding:
-//                   - Shared enums and user-defined types (UDTs)
-//                   - Structural constants (identity, module IDs, buffer cap)
-//                   - Empty, bannered Core subsystem sections (no functions yet)
-//                   - A no-op MAIN section
-//                 It contains NO behavior of any kind:
-//                   - No functions, no calculations, no indicators
-//                   - No entries/exits/orders, no request.security, no plots
-//                 Subsystem logic arrives in later milestones (M1.2 – M1.4).
+//  STATUS       : FRAMEWORK ONLY — Module 01 (Core Framework), milestone M1.2.
+//                 Implemented subsystems (defined, not yet wired to a call site):
+//                   - util : pure helpers (clamp, normalize, safeDiv, roundToTick, ...)
+//                   - log  : bounded O(1) diagnostics ring buffer (level/debug gated)
+//                   - err  : hybrid validation (fatal halt / recoverable warning)
+//                 Still absent (later milestones): cfg (M1.3), ctx (M1.3),
+//                 state + lifecycle + integration (M1.4).
+//                 Contains NO trading behavior: no entries/exits/orders, no
+//                 request.security, no ta.*, no plots, no calculations. The
+//                 subsystems are defined but not invoked (MAIN remains no-op).
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -70,7 +70,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.0.2"
+const string PROJECT_VERSION = "0.0.3"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -98,6 +98,21 @@ const string MODULE_ID_RISK       = "RISK"
 const string MODULE_ID_DASHBOARD  = "DASH"
 const string MODULE_ID_ALERTS     = "ALERT"
 const string MODULE_ID_OPTIMIZE   = "OPT"
+
+// -- Utility constants (definitional; not tunable trading parameters).
+const float UTIL_NORMALIZED_MIN = 0.0   // lower bound of a normalized value
+const float UTIL_NORMALIZED_MAX = 1.0   // upper bound of a normalized value
+const int   MINUTES_PER_HOUR    = 60    // minutes-of-day conversion factor
+const int   DECIMAL_BASE        = 10    // base for decimal-precision rounding
+
+// -- Error-ID registry. Stable identifiers used by the validation / error
+//    subsystem and stamped into LogEntry.errorId. Format: CORE-<AREA>-<NNN>.
+const string ERR_NONE                 = ""               // no associated error
+const string ERR_CFG_UNSUPPORTED_TF   = "CORE-CFG-001"   // primary timeframe not supported
+const string ERR_CFG_INVALID_SESSION  = "CORE-CFG-002"   // malformed / inverted session window
+const string ERR_CFG_DIAG_CAP_RANGE   = "CORE-CFG-003"   // diagnostics buffer cap out of range
+const string ERR_STATE_REINIT         = "CORE-STATE-001" // attempted re-initialization
+const string ERR_ASSERT_FAILED        = "CORE-ASSERT-001"// debug assertion failed
 
 // -- Input group titles (kept as constants to avoid duplicated string literals).
 const string G_01_CORE       = "01 · Core Framework"
@@ -254,20 +269,20 @@ type KernelState
 //  the configuration subsystem (M1.3) will be their sole consumer, per ADR-0008.
 //  Configuration is intentionally separated from logic.
 // =============================================================================
-bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.0.2.")
-bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.0.2.")
-bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.0.2.")
-bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.0.2.")
-bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.0.2.")
-bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.0.2.")
-bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.0.2.")
-bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.0.2.")
-bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.0.2.")
-bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.0.2.")
-bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.0.2.")
-bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.0.2.")
-bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.0.2.")
-bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.0.2.")
+bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.0.3.")
+bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.0.3.")
+bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.0.3.")
+bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.0.3.")
+bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.0.3.")
+bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.0.3.")
+bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.0.3.")
+bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.0.3.")
+bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.0.3.")
+bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.0.3.")
+bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.0.3.")
+bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.0.3.")
+bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.0.3.")
+bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.0.3.")
 
 
 // =============================================================================
@@ -279,19 +294,206 @@ bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", grou
 // =============================================================================
 
 // -----------------------------------------------------------------------------
-//  Core · util — pure, deterministic helpers.
-//  TODO(M1.2): implement per src/modules/01-core-framework/README.md §3.
+//  Core · util — pure, deterministic helpers (M1.2).
+//  Side-effect free. No indicators, no trading logic.
 // -----------------------------------------------------------------------------
 
-// -----------------------------------------------------------------------------
-//  Core · log — bounded diagnostics ring buffer.
-//  TODO(M1.2): implement (uses LogEntry / Diagnostics / DIAG_BUFFER_CAP).
-// -----------------------------------------------------------------------------
+// utilIsValidNumber(value)   @stable
+//   Responsibility : Report whether a value is usable (not na).
+//   Parameters     : value — float.
+//   Returns        : bool — true when value is not na.
+//   Determinism    : pure; no state.
+//   Errors         : none. Note: Pine surfaces non-finite results as na.
+utilIsValidNumber(float value) =>
+    not na(value)
+
+// utilClamp(value, lo, hi)   @stable
+//   Responsibility : Constrain value to the inclusive range [lo, hi].
+//   Returns        : float — the clamped value.
+//   Determinism    : pure.  Errors: none.
+utilClamp(float value, float lo, float hi) =>
+    math.max(lo, math.min(hi, value))
+
+// utilSafeDiv(num, den, fallback)   @stable
+//   Responsibility : Divide, guarding against zero / na operands.
+//   Returns        : float — num / den, or fallback when unsafe.
+//   Determinism    : pure.  Errors: none (returns fallback instead of na/inf).
+utilSafeDiv(float num, float den, float fallback) =>
+    na(den) or na(num) or den == 0 ? fallback : num / den
+
+// utilNormalize(value, lo, hi)   @stable
+//   Responsibility : Scale value from [lo, hi] into [0, 1], clamped.
+//   Returns        : float in [0, 1]; the lower bound when lo == hi (safe).
+//   Determinism    : pure.  Errors: none.
+utilNormalize(float value, float lo, float hi) =>
+    float ratio = utilSafeDiv(value - lo, hi - lo, UTIL_NORMALIZED_MIN)
+    utilClamp(ratio, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+
+// utilRoundToTick(price)   @stable
+//   Responsibility : Round a price to the instrument tick (syminfo.mintick).
+//   Returns        : float — tick-aligned price; input passed through when invalid.
+//   Determinism    : pure w.r.t. price and symbol.  Errors: none.
+utilRoundToTick(float price) =>
+    utilIsValidNumber(price) ? math.round(price / syminfo.mintick) * syminfo.mintick : price
+
+// utilMinutesOfDay(t)   @internal
+//   Responsibility : Minutes elapsed since midnight (exchange tz) for time t.
+//   Returns        : int — hour * 60 + minute.
+//   Determinism    : pure given t.  Errors: none.
+utilMinutesOfDay(int t) =>
+    hour(t) * MINUTES_PER_HOUR + minute(t)
+
+// utilFormatFloat(value, precision)   @internal
+//   Responsibility : Format a float to a fixed number of decimals for diagnostics.
+//   Returns        : string — "na" when value is na.
+//   Determinism    : pure.  Errors: none.
+utilFormatFloat(float value, int precision) =>
+    if na(value)
+        "na"
+    else
+        float factor = math.pow(DECIMAL_BASE, precision)
+        str.tostring(math.round(value * factor) / factor)
 
 // -----------------------------------------------------------------------------
-//  Core · err — error handling and hybrid validation.
-//  TODO(M1.2): implement (uses ValidationResult / ValidationSeverity).
+//  Core · log — bounded diagnostics ring buffer (M1.2).
+//  O(1) insertion. Gated by level + debug. Operates on a caller-owned
+//  Diagnostics handle (KernelState wiring arrives in M1.4).
 // -----------------------------------------------------------------------------
+
+// logLevelRank(level)   @internal
+//   Responsibility : Ordinal severity rank (0 = highest). Single source of the
+//                    ordering so logShouldEmit does not duplicate the mapping
+//                    (satisfies the no-duplication rule).
+//   Returns        : int rank in [0, 3].
+//   Determinism    : pure.  Errors: none.
+logLevelRank(LogLevel level) =>
+    switch level
+        LogLevel.error => 0
+        LogLevel.warn  => 1
+        LogLevel.info  => 2
+        LogLevel.debug => 3
+        => 3
+
+// logShouldEmit(level, threshold, debugEnabled)   @internal
+//   Responsibility : Decide whether a message at `level` is emitted, given the
+//                    active threshold and debug flag.
+//   Returns        : bool.
+//   Determinism    : pure.  Errors: none.
+logShouldEmit(LogLevel level, LogLevel threshold, bool debugEnabled) =>
+    bool passesThreshold = logLevelRank(level) <= logLevelRank(threshold)
+    bool requiresDebug   = level == LogLevel.debug or level == LogLevel.info
+    passesThreshold and (not requiresDebug or debugEnabled)
+
+// logFormat(entry)   @internal
+//   Responsibility : Render a LogEntry as one diagnostic line.
+//   Returns        : string "[LEVEL MODULE ERRID b#N] message".
+//   Determinism    : pure.  Errors: none.
+logFormat(LogEntry entry) =>
+    string levelLabel = switch entry.level
+        LogLevel.error => "ERROR"
+        LogLevel.warn  => "WARN"
+        LogLevel.info  => "INFO"
+        LogLevel.debug => "DEBUG"
+        => "INFO"
+    string idPart = entry.errorId == ERR_NONE ? "" : " " + entry.errorId
+    "[" + levelLabel + " " + entry.moduleId + idPart + " b#" + str.tostring(entry.barIndex) + "] " + entry.message
+
+// logWrite(diag, level, moduleId, errorId, message, threshold, debugEnabled)   @stable
+//   Responsibility : Append one gated entry to the ring buffer (O(1)).
+//   Returns        : void.
+//   Determinism    : deterministic per bar (stamps bar_index / time).
+//   Errors         : none. Note: the oldest entry is overwritten when full.
+logWrite(Diagnostics diag, LogLevel level, string moduleId, string errorId, string message, LogLevel threshold, bool debugEnabled) =>
+    if logShouldEmit(level, threshold, debugEnabled)
+        if na(diag.entries)
+            diag.entries      := array.new<LogEntry>(DIAG_BUFFER_CAP)
+            diag.capacity     := DIAG_BUFFER_CAP
+            diag.head         := 0
+            diag.count        := 0
+            diag.droppedCount := 0
+        LogEntry entry = LogEntry.new(level, bar_index, time, moduleId, errorId, message)
+        array.set(diag.entries, diag.head, entry)
+        diag.head := (diag.head + 1) % diag.capacity
+        if diag.count < diag.capacity
+            diag.count := diag.count + 1
+        else
+            diag.droppedCount := diag.droppedCount + 1
+
+// logDrain(diag)   @experimental
+//   Responsibility : Snapshot buffered entries, oldest -> newest.
+//   Returns        : array<LogEntry> — a new array; empty when nothing buffered.
+//   Determinism    : deterministic. Complexity O(count), count <= DIAG_BUFFER_CAP;
+//                    on-demand, not a per-bar hot path.
+//   Errors         : none.
+logDrain(Diagnostics diag) =>
+    array<LogEntry> out = array.new<LogEntry>(0)
+    if not na(diag.entries) and diag.count > 0
+        int start = (diag.head - diag.count + diag.capacity) % diag.capacity
+        for i = 0 to diag.count - 1
+            array.push(out, array.get(diag.entries, (start + i) % diag.capacity))
+    out
+
+// logClear(diag)   @experimental
+//   Responsibility : Logically empty the buffer (O(1); counters reset).
+//   Returns        : void.  Determinism: deterministic.  Errors: none.
+logClear(Diagnostics diag) =>
+    diag.head         := 0
+    diag.count        := 0
+    diag.droppedCount := 0
+
+// -----------------------------------------------------------------------------
+//  Core · err — error handling and hybrid validation (M1.2).
+//  Fatal -> halt (runtime.error); recoverable -> logged warning.
+// -----------------------------------------------------------------------------
+
+// errFormat(severity, errorId, message)   @internal
+//   Responsibility : Render an error / validation line.
+//   Returns        : string "[SEVERITY] ERRID: message".
+//   Determinism    : pure.  Errors: none.
+errFormat(ValidationSeverity severity, string errorId, string message) =>
+    string sev = switch severity
+        ValidationSeverity.fatal   => "FATAL"
+        ValidationSeverity.warning => "WARNING"
+        ValidationSeverity.ok      => "OK"
+        => "OK"
+    string idPart = errorId == ERR_NONE ? "" : errorId + ": "
+    "[" + sev + "] " + idPart + message
+
+// errRaiseFatal(errorId, message)   @stable
+//   Responsibility : Abort the script with a descriptive fatal error.
+//   Returns        : never (runtime.error halts execution).
+//   Determinism    : deterministic.  Errors: raises runtime.error by design.
+errRaiseFatal(string errorId, string message) =>
+    runtime.error(errFormat(ValidationSeverity.fatal, errorId, message))
+
+// errWarn(diag, errorId, message, threshold, debugEnabled)   @stable
+//   Responsibility : Record a non-fatal warning to diagnostics.
+//   Returns        : void.  Determinism: deterministic.  Errors: none.
+errWarn(Diagnostics diag, string errorId, string message, LogLevel threshold, bool debugEnabled) =>
+    logWrite(diag, LogLevel.warn, MODULE_ID_CORE, errorId, message, threshold, debugEnabled)
+
+// errAssert(condition, errorId, message, debugEnabled)   @stable
+//   Responsibility : Debug-only invariant check; halts if it fails while debug is on.
+//   Returns        : void.  Determinism: deterministic.
+//   Errors         : raises runtime.error when debugEnabled and condition is false.
+errAssert(bool condition, string errorId, string message, bool debugEnabled) =>
+    if debugEnabled and not condition
+        errRaiseFatal(errorId, "assertion failed: " + message)
+
+// errApplyValidation(diag, results, threshold, debugEnabled)   @experimental
+//   Responsibility : Apply the hybrid policy over validation results —
+//                    the first fatal halts; each warning is logged.
+//   Returns        : void.  Determinism: deterministic. Complexity O(size(results)).
+//   Errors         : raises runtime.error on the first fatal result.
+errApplyValidation(Diagnostics diag, array<ValidationResult> results, LogLevel threshold, bool debugEnabled) =>
+    if not na(results)
+        int n = array.size(results)
+        for i = 0 to n - 1
+            ValidationResult r = array.get(results, i)
+            if r.severity == ValidationSeverity.fatal
+                errRaiseFatal(r.errorId, r.message)
+            else if r.severity == ValidationSeverity.warning
+                errWarn(diag, r.errorId, r.message, threshold, debugEnabled)
 
 // -----------------------------------------------------------------------------
 //  Core · cfg — configuration build / validate / accessor.
@@ -333,9 +535,9 @@ bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", grou
 // =============================================================================
 //  MAIN
 // -----------------------------------------------------------------------------
-//  No-op. Milestone M1.1 declares types and scaffolding only. The single
-//  per-bar call site — `BarContext context = coreOnBar()` — is wired here in
-//  M1.4 once the lifecycle exists. Nothing executes this build.
+//  No-op. Through M1.2 the util / log / err subsystems are DEFINED but not
+//  invoked. The single per-bar call site — `BarContext context = coreOnBar()` —
+//  is wired here in M1.4 once the lifecycle exists. Nothing executes this build.
 // =============================================================================
 // TODO(M1.4): wire coreOnBar() here. No orders, plots, or calculations.
 
@@ -343,8 +545,8 @@ bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", grou
 // =============================================================================
 //  TODO — MODULE 01 MILESTONES
 // -----------------------------------------------------------------------------
-//    [x] M1.1  Enums, UDTs, constants, subsystem scaffolding   (v0.0.2, current)
-//    [ ] M1.2  util / log / err (validation) subsystems        (v0.0.3)
+//    [x] M1.1  Enums, UDTs, constants, subsystem scaffolding   (v0.0.2)
+//    [x] M1.2  util / log / err (validation) subsystems        (v0.0.3, current)
 //    [ ] M1.3  cfg / ctx subsystems                            (v0.0.4)
 //    [ ] M1.4  state / lifecycle / diagnostics / integration   (v0.1.0)
 //

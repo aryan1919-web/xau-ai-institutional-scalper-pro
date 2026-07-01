@@ -3,7 +3,7 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** In implementation — **M1.1 done (`v0.0.2`)**; M1.2–M1.4 pending · **Target version:** `0.1.0` · **Depends on:** none (foundation)
+> **Status:** In implementation — **M1.1 (`v0.0.2`) + M1.2 (`v0.0.3`) done**; M1.3–M1.4 pending · **Target version:** `0.1.0` · **Depends on:** none (foundation)
 
 This document is the authoritative **architecture** for the Core Framework. It is
 design only — no Pine code exists yet. Implementation is a separate, later,
@@ -220,13 +220,27 @@ Recorded as ADR-0006 – ADR-0014 in [../../../docs/DECISIONS.md](../../../docs/
 
 - _None yet._ Design targets the project [Performance Budget](../../../docs/SPECIFICATION.md#performance-budget).
 
+## Error-ID registry
+
+Stable identifiers stamped into `LogEntry.errorId` and used by fatal/recoverable
+validation. Format `CORE-<AREA>-<NNN>` (see `err` subsystem, ADR-0010).
+
+| ID | Constant | Meaning |
+|----|----------|---------|
+| `CORE-CFG-001` | `ERR_CFG_UNSUPPORTED_TF` | Primary timeframe not supported (fatal). |
+| `CORE-CFG-002` | `ERR_CFG_INVALID_SESSION` | Malformed / inverted session window (fatal). |
+| `CORE-CFG-003` | `ERR_CFG_DIAG_CAP_RANGE` | Diagnostics buffer cap out of range (recoverable → clamp). |
+| `CORE-STATE-001` | `ERR_STATE_REINIT` | Attempted re-initialization (fatal). |
+| `CORE-ASSERT-001` | `ERR_ASSERT_FAILED` | Debug assertion failed (fatal, debug-gated). |
+| _(empty)_ | `ERR_NONE` | No associated error (non-error log entries). |
+
 ## Implementation checklist
 
 - [x] **M1.1 (`v0.0.2`)** — Enums (5) + UDTs (8, incl. `LogEntry` with `moduleId`/`errorId`),
       structural constants, `MODULE_ID_*`, `DIAG_BUFFER_CAP`, empty subsystem scaffolding, no-op MAIN.
-- [ ] **M1.2 (`v0.0.3`)** — `util` (clamp, safeDiv, normalize, isValidNumber, roundToTick).
-- [ ] **M1.2 (`v0.0.3`)** — `log` subsystem (bounded ring buffer, gating).
-- [ ] **M1.2 (`v0.0.3`)** — `err` subsystem (fatal/warn/assert, hybrid validation).
+- [x] **M1.2 (`v0.0.3`)** — `util` (clamp, safeDiv, normalize, isValidNumber, roundToTick; + internal minutesOfDay, formatFloat).
+- [x] **M1.2 (`v0.0.3`)** — `log` subsystem (bounded O(1) ring buffer, level/debug gating).
+- [x] **M1.2 (`v0.0.3`)** — `err` subsystem (fatal/warn/assert, hybrid validation) + Error-ID registry.
 - [ ] **M1.3 (`v0.0.4`)** — `cfg` subsystem (build, validate, get; immutable `Config`).
 - [ ] **M1.3 (`v0.0.4`)** — `ctx` subsystem (build, confirmed-bar, new-bar, session, timeframe).
       `ctxHtfValue` **reserved** (docs only) until first module needing `request.security`.
