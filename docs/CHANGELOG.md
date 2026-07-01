@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- Nothing yet.
+### Added
+- **Module 01 — Core Framework architecture** (design only; no code). Full architecture
+  in `src/modules/01-core-framework/README.md`: responsibilities, subsystems
+  (`util`/`log`/`err`/`cfg`/`ctx`/`state`/orchestrator), planned public API, shared
+  enums/UDTs, hybrid validation, non-repainting primitives, single `KernelState`.
+- **API Stability Policy** (`Stable` / `Experimental` / `Internal`) in `docs/API.md`
+  and `docs/STYLE_GUIDE.md`.
+- **Performance Budget** (permanent, project-wide caps) in `docs/SPECIFICATION.md`,
+  mirrored in `docs/STYLE_GUIDE.md`.
+- **Module Ownership Matrix** — new `docs/MODULE_OWNERSHIP.md`, the authoritative
+  dependency contract for all 14 modules; indexed in `docs/README.md` and linked from
+  `docs/ARCHITECTURE.md`.
+- Coding standards in `docs/STYLE_GUIDE.md`: subsystem/module prefix registry, function
+  and file section ordering, expanded documentation-block requirements.
+- Architectural Decision Records **ADR-0006 – ADR-0014** in `docs/DECISIONS.md`.
+
+_No changes to `src/MASTER_STRATEGY.pine` (architecture only)._
 
 ## [0.0.1] - 2026-07-01
 

@@ -15,9 +15,34 @@ rules are binding and complement [AGENTS.md](../AGENTS.md).
 - **Constants:** `UPPER_SNAKE_CASE` (e.g. `PROJECT_VERSION`, `MODULE_COUNT`).
 - **Input group titles:** `G_<NN>_<NAME>` constants (e.g. `G_02_TREND`).
 - **Inputs:** `inp` prefix + `camelCase` (e.g. `inpEnableTrend`).
-- **Functions / locals:** `camelCase` (e.g. `projectVersion`, `swingHigh`).
-- **Types / UDT (when introduced):** `PascalCase`.
+- **Public functions:** `<subsystemPrefix><Action>` in `camelCase`
+  (e.g. `ctxIsNewBar`, `utilClamp`) — see the prefix registry below ([ADR-0006](DECISIONS.md)).
+- **Locals:** `camelCase`.
+- **Types / UDT:** `PascalCase` (e.g. `Config`, `BarContext`, `KernelState`).
+- **Enum members & UDT fields:** `camelCase` (e.g. `Direction.long`, `cfg.debugEnabled`).
 - Names describe intent, not implementation.
+
+### Subsystem / module prefix registry
+
+Public functions are prefixed by the subsystem (Core) or module that owns them. This
+keeps a single-file, 14-module codebase collision-free and self-describing.
+
+| Prefix | Owner |
+|--------|-------|
+| `cfg`, `ctx`, `util`, `state`, `err`, `log` | 01 Core Framework (its subsystems) |
+| `trend` | 02 Trend Engine |
+| `mom` | 03 Momentum Engine |
+| `sr` | 04 Support / Resistance |
+| `struct` | 05 Market Structure |
+| `liq` | 06 Liquidity |
+| `ob` | 07 Order Blocks |
+| `fvg` | 08 Fair Value Gap |
+| `sig` | 09 Signal Engine |
+| `trade` | 10 Trade Engine |
+| `risk` | 11 Risk Manager |
+| `dash` | 12 Dashboard |
+| `alert` | 13 Alerts |
+| `opt` | 14 Optimization |
 
 ## 2. Constants and configuration
 
@@ -38,14 +63,18 @@ rules are binding and complement [AGENTS.md](../AGENTS.md).
 
 ## 4. Documentation and comments
 
-- Every **public function** has a documentation block:
+- Every **public function** has a documentation block that includes a stability
+  annotation (`@stable` / `@experimental` / `@internal`, see §9):
   ```
-  // functionName(params)
-  //   Responsibility : ...
-  //   Parameters     : ...
-  //   Returns        : ...
-  //   Note           : repainting / limits / caveats
+  // functionName(params)   @stable
+  //   Responsibility : one sentence, single responsibility.
+  //   Parameters     : name — type — meaning.
+  //   Returns        : type — meaning.
+  //   Determinism    : deterministic? any state dependence?
+  //   Errors         : fatal / recoverable / none.
+  //   Note           : repainting / limits / caveats.
   ```
+- Every **enum and UDT** documents each member/field.
 - Every non-obvious **calculation is documented** with *why*, not just *what*.
 - Use section banners to group related code:
   ```
@@ -83,10 +112,52 @@ rules are binding and complement [AGENTS.md](../AGENTS.md).
 - Scoring contributions must be explicit and attributable
   ([SPECIFICATION.md](SPECIFICATION.md) §7, [ADR-0003](DECISIONS.md)).
 
-## 8. Review checklist (quick)
+## 8. Function and section ordering
+
+**Function ordering** (within a subsystem/module): private/leaf helpers first, then the
+public functions that use them (Pine requires define-before-use). Group by subsystem;
+within a subsystem, order by dependency (leaf → composite).
+
+**Section ordering** (whole file) — canonical and enforced in review:
+
+```
+license + //@version  ->  header doc  ->  strategy()  ->  CONSTANTS  ->  ENUMS  ->  TYPES
+->  INPUTS  ->  Core: util -> log -> err -> cfg -> ctx -> state -> orchestrator
+->  Modules 02–08 (analysis)  ->  09 Signal  ->  11 Risk  ->  10 Trade
+->  12 Dashboard  ->  13 Alerts  ->  14 Optimization  ->  MAIN  ->  TODO
+```
+
+Inputs are declared before any function; only `cfgBuild` consumes them
+([ADR-0008](DECISIONS.md)).
+
+## 9. API stability levels
+
+Every public function declares its stability in the doc block ([ADR-0012](DECISIONS.md)):
+
+- `@stable` — committed contract; breaking it needs an ADR + version bump.
+- `@experimental` — provisional; may change between minor versions without an ADR.
+- `@internal` — local to its subsystem/module; never called across modules.
+
+Only `@stable`/`@experimental` are cross-module callable. Promotion
+`@experimental → @stable` requires an ADR. Full policy and catalog: [API.md](API.md).
+
+## 10. Performance budget (quick reference)
+
+Binding project caps — mirror of [SPECIFICATION.md](SPECIFICATION.md#performance-budget)
+([ADR-0013](DECISIONS.md)). Exceeding any requires an ADR.
+
+| `request.security` | arrays | labels | boxes | lines | tables | diagnostics | `var`/`varip` | per-bar |
+|---|---|---|---|---|---|---|---|---|
+| ≤ 8 | ≤ 32 | ≤ 100 | ≤ 100 | ≤ 100 | ≤ 4 | ≤ 100 | ≤ 16 | O(1); loop ≤ 64 |
+
+Label/box/line caps are a **shared pool** across drawing modules (04–08, 12); reuse objects.
+
+## 11. Review checklist (quick)
 
 - [ ] v6 only, compiles clean.
 - [ ] No magic numbers, no duplication, no hidden calculations.
-- [ ] One responsibility per function; documented.
+- [ ] One responsibility per function; documented (with stability annotation).
+- [ ] Subsystem/module prefix + correct section/function ordering.
 - [ ] No repainting; deterministic decisions.
-- [ ] Docs updated (API / CHANGELOG / module README as relevant).
+- [ ] Within the performance budget.
+- [ ] Docs updated (API / CHANGELOG / module README / OWNERSHIP as relevant).

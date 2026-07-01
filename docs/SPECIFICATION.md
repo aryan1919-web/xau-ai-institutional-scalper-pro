@@ -86,6 +86,50 @@ and are authoritative for that module. Implementation order is defined in
 | 13 | Alerts | Alert condition routing and messaging. |
 | 14 | Optimization | Parameter optimization helpers and diagnostics. |
 
+### 6.1 Module 01 — Core Framework (detail)
+
+Core Framework is the foundation; its full architecture is authoritative in
+[../src/modules/01-core-framework/README.md](../src/modules/01-core-framework/README.md).
+Binding contracts:
+
+- **Configuration:** inputs are read once and validated into an immutable `Config`
+  snapshot; **modules never read `input.*` directly** ([ADR-0008](DECISIONS.md)).
+- **Shared types:** native Pine v6 `enum` + UDT for shared vocabulary
+  (`Direction`, `SessionState`, `LogLevel`, …) ([ADR-0007](DECISIONS.md)).
+- **State:** a single persistent `KernelState` object is the sole mutable global
+  ([ADR-0009](DECISIONS.md)).
+- **Validation:** hybrid policy — fail-fast (`runtime.error`) for structural errors;
+  safe-degrade (clamp + warning) for out-of-range scalars ([ADR-0010](DECISIONS.md)).
+- **Non-repainting:** all HTF access via `ctxHtfValue` (`lookahead_off`, confirmed);
+  decisions on confirmed bars ([ADR-0011](DECISIONS.md)).
+- **Dependencies:** Core depends on nothing; the authoritative contract for all
+  modules is [MODULE_OWNERSHIP.md](MODULE_OWNERSHIP.md) ([ADR-0014](DECISIONS.md)).
+
+## Performance Budget
+
+**Permanent, project-wide engineering budget.** Every module — current and future —
+**must stay within these caps.** They are conservative project limits (stricter than
+raw platform maxima) that protect maintainability and leave headroom; verify platform
+figures against [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md). Exceeding any budget
+requires an ADR ([ADR-0013](DECISIONS.md)).
+
+| Resource | Budget | Notes |
+|----------|--------|-------|
+| `request.security` calls (whole strategy) | ≤ 8 | Consolidated in Core; HTF context is shared, not per-module. |
+| Arrays (live) | ≤ 32 | Bounded, explicitly-managed buffers only. |
+| Labels | ≤ 100 | Shared drawing pool; reuse/cap objects. |
+| Boxes | ≤ 100 | Shared drawing pool (OB / FVG / S-R zones). |
+| Lines | ≤ 100 | Shared drawing pool (levels / structure). |
+| Tables | ≤ 4 | Dashboard uses 1–2; headroom for diagnostics. |
+| Diagnostics entries | ≤ 100 | Fixed-cap ring buffer in `KernelState`. |
+| Persistent objects (`var` / `varip`) | ≤ 16 | Single `KernelState` preferred; scalars discouraged. |
+| Execution complexity per bar | O(1) amortized; bounded loop ≤ 64 iterations | No unbounded per-bar work. |
+
+The label/box/line budgets form a **shared pool** across drawing modules (04–08, 12);
+each module declares its allotment in its README and reuses objects rather than allocating.
+A concise copy of this table is mirrored in [STYLE_GUIDE.md](STYLE_GUIDE.md) for
+day-to-day reference.
+
 ## 7. Determinism and explainability (binding)
 
 The signal engine (Module 09) MUST:

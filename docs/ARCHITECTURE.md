@@ -113,21 +113,53 @@ graph TD
 ```
 
 Dependencies flow **upward only** (foundation → analysis → decision → execution →
-presentation). No cycles are permitted.
+presentation). No cycles are permitted. The authoritative, per-module dependency
+contract (data owned/consumed/prohibited, callers, forbidden dependencies) is
+[MODULE_OWNERSHIP.md](MODULE_OWNERSHIP.md).
 
-## 6. Determinism boundary
+## 6. Core Framework internal architecture
+
+Module 01 occupies the Foundation layer and is itself organized into subsystems, in
+strict dependency order (leaf → composite). Full detail:
+[../src/modules/01-core-framework/README.md](../src/modules/01-core-framework/README.md).
+
+```
+util  (pure helpers)
+  -> log  (diagnostics primitive)
+       -> err  (uses log)
+            -> cfg  (uses util, err, log)   config -> validate -> immutable Config
+                 -> ctx  (uses util, cfg)    per-bar context, non-repainting primitives
+                      -> state  (uses cfg, ctx)   single KernelState (var)
+                           -> core orchestrator   coreInit / coreOnBar (module seam)
+```
+
+Internal data flow:
+
+```
+input.* -> cfgBuild (validate) -> immutable Config -> stateInit (cache)
+per bar -> coreOnBar -> ctxBuild -> BarContext -> stateUpdate -> modules 02..14
+diagnostics -> bounded ring buffer -> logDrain -> Dashboard (12) / Optimization (14)
+```
+
+Key invariants: one persistent object (`KernelState`); modules never read `input.*`
+directly; all HTF access flows through `ctxHtfValue` (`lookahead_off`, confirmed).
+Canonical file **section ordering** and **function ordering** are defined in
+[STYLE_GUIDE.md](STYLE_GUIDE.md).
+
+## 7. Determinism boundary
 
 The Signal Engine (09) is the determinism boundary: given identical module
 observations and inputs, it must produce an identical score and an inspectable
 rationale. See [SPECIFICATION.md](SPECIFICATION.md) §7 and
 [ADR-0003](DECISIONS.md).
 
-## 7. File layout mapping
+## 8. File layout mapping
 
 | Concern | Location |
 |---------|----------|
 | Compiled strategy (all logic) | `../src/MASTER_STRATEGY.pine` |
 | Per-module documentation | `../src/modules/<NN-name>/README.md` |
+| Dependency contract | [MODULE_OWNERSHIP.md](MODULE_OWNERSHIP.md) |
 | Public function catalog | [API.md](API.md) |
 | Testing methodology | [BACKTEST_PROTOCOL.md](BACKTEST_PROTOCOL.md) |
 | Platform limits | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) |

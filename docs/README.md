@@ -8,6 +8,7 @@ Authoritative documentation for **XAU AI Institutional Scalper Pro**. Start here
 |----------|---------|
 | [SPECIFICATION.md](SPECIFICATION.md) | Authoritative project specification. No implementation without it. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design: diagrams, module relationships, data flow, dependency graph. |
+| [MODULE_OWNERSHIP.md](MODULE_OWNERSHIP.md) | Authoritative per-module dependency contract (ownership matrix). |
 | [ROADMAP.md](ROADMAP.md) | Milestones, release plan, version timeline. |
 | [CHANGELOG.md](CHANGELOG.md) | Semantic version history. |
 | [DECISIONS.md](DECISIONS.md) | Architectural Decision Records (ADRs). |
