@@ -10,21 +10,21 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.1.3  (Module 02 · M2.3 — chart-timeframe trend model)
+//  Version      : 0.1.4  (Module 02 · M2.4 — multi-timeframe synthesis)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
 //  STATUS       : Module 01 (Core Framework) frozen at v0.1.0. Module 02 (Trend
-//                 Engine) in progress. M2.3 implements the CHART-TIMEFRAME model:
-//                   - @internal helpers compute a REPLACEABLE trend formula
-//                     (fast/slow EMA + ATR); raw values stay internal (R6/R7).
-//                   - trendEvaluate() produces the immutable TrendState (ABI) and
-//                     is the sole reader/updater of KernelState.trendMemory (R8/R10).
-//                     It is wired in MAIN and computes each bar (result unused).
-//                   - pure trend* accessors (Experimental until 0.2.0, R5).
-//                 Chart TF only (MTF is M2.4). NO signals/entries/exits/orders, no
-//                 plots, no alerts. The ONLY request.security is the still-uninvoked
-//                 ctxHtfValue (count remains exactly 1).
+//                 Engine) in progress. M2.4 adds MULTI-TIMEFRAME synthesis:
+//                   - one REPLACEABLE signed-strength formula runs on the chart
+//                     directly and on the HTF via a single ctxHtfValue call.
+//                   - trendChartView / trendHtfView -> trendMergeViews compute
+//                     alignment and now-independent confidence/quality.
+//                   - trendEvaluate() still the sole producer of TrendState and
+//                     sole toucher of trendMemory (R8/R10).
+//                 ctxHtfValue is now invoked (exactly ONE call site; HTF usage 1).
+//                 request.security text stays inside ctxHtfValue only (count = 1).
+//                 NO signals/entries/exits/orders, no plots, no alerts.
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -71,7 +71,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.1.3"
+const string PROJECT_VERSION = "0.1.4"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -122,7 +122,7 @@ const string ERR_STATE_REINIT         = "CORE-STATE-001" // attempted re-initial
 const string ERR_ASSERT_FAILED        = "CORE-ASSERT-001"// debug assertion failed
 
 // -- Trend Engine (Module 02) error IDs.
-const string ERR_TREND_HTF_NOT_HIGHER  = "TREND-CFG-001" // HTF <= chart timeframe (used from M2.4)
+const string ERR_TREND_HTF_NOT_HIGHER  = "TREND-CFG-001" // HTF < chart timeframe (checked when MTF on)
 const string ERR_TREND_FAST_GE_SLOW    = "TREND-CFG-002" // fast length >= slow length
 const string ERR_TREND_THRESHOLD_RANGE = "TREND-CFG-003" // threshold out of [0, 1]
 
@@ -291,7 +291,7 @@ type TrendMemory
     int        transitionCounter = 0
 
 // TrendTimeframeView — one timeframe's normalized trend read (internal). Used by
-// the trend helpers to combine chart + HTF views (HTF in M2.4); never exposed
+// the trend helpers to combine chart + HTF views (trendMergeViews); never exposed
 // downstream and holds no raw indicator values (R6).
 type TrendTimeframeView
     Direction      direction = Direction.flat
@@ -375,8 +375,8 @@ bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", grou
 bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.1.0.")
 
 // -- Trend Engine (Module 02) configuration inputs (consumed only by cfgBuild).
-bool   inpTrendUseMtf            = input.bool(false, "Use HTF confirmation", group = G_02_TREND, tooltip = "Confirm the chart-timeframe trend against a higher timeframe. No effect until M2.4.")
-string inpTrendHtf               = input.timeframe("5", "HTF timeframe", group = G_02_TREND, tooltip = "Higher timeframe for confirmation (must be >= chart timeframe). Read via ctxHtfValue in M2.4.")
+bool   inpTrendUseMtf            = input.bool(false, "Use HTF confirmation", group = G_02_TREND, tooltip = "Confirm the chart-timeframe trend against a higher timeframe (raises confidence when aligned, penalizes it when the HTF disagrees).")
+string inpTrendHtf               = input.timeframe("5", "HTF timeframe", group = G_02_TREND, tooltip = "Higher timeframe for confirmation (must be >= chart timeframe). Read non-repainting via Core's ctxHtfValue.")
 int    inpTrendFastLength        = input.int(21, "Fast length", minval = 1, group = G_02_TREND, tooltip = "Fast trend lookback length (formula-agnostic; must be < slow).")
 int    inpTrendSlowLength        = input.int(50, "Slow length", minval = 2, group = G_02_TREND, tooltip = "Slow trend lookback length (formula-agnostic; must be > fast).")
 float  inpTrendFlatThreshold     = input.float(0.2, "Flat threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = G_02_TREND, tooltip = "Normalized strength below which the trend is flat.")
@@ -630,11 +630,15 @@ cfgValidate(Config draft) =>
         array.push(results, ValidationResult.new(ValidationSeverity.warning, ERR_CFG_DIAG_CAP_RANGE, "diagBufferCap out of range; clamped to " + str.tostring(clampedCap)))
         draft.diagBufferCap := clampedCap
     // Module 02 — Trend Engine config validation (config only; no trend logic).
-    // (HTF >= chart timeframe, TREND-CFG-001, is validated in M2.4 alongside MTF.)
     if not na(draft.trend)
         // Fatal: fast lookback must be below slow lookback.
         if draft.trend.fastLength >= draft.trend.slowLength
             array.push(results, ValidationResult.new(ValidationSeverity.fatal, ERR_TREND_FAST_GE_SLOW, "trend fast length must be less than slow length"))
+        // Fatal: when MTF confirmation is on, the HTF must be >= the chart TF
+        // (a lower "higher" timeframe is a misconfiguration). Validated now that
+        // M2.4 actually reads the HTF via ctxHtfValue (TREND-CFG-001).
+        if draft.trend.useMtf and timeframe.in_seconds(draft.trend.htfTimeframe) < timeframe.in_seconds()
+            array.push(results, ValidationResult.new(ValidationSeverity.fatal, ERR_TREND_HTF_NOT_HIGHER, "trend HTF timeframe must be >= the chart timeframe"))
         // Recoverable: clamp normalized thresholds into [0, 1].
         float clampedFlat = utilClamp(draft.trend.flatThreshold, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
         if clampedFlat != draft.trend.flatThreshold
@@ -890,30 +894,88 @@ coreOnBar(KernelState state) =>
 
 
 // =============================================================================
-//  MODULE 02 — TREND ENGINE (chart-timeframe model, M2.3)
+//  MODULE 02 — TREND ENGINE (multi-timeframe synthesis, M2.4)
 // -----------------------------------------------------------------------------
-//  Produces the immutable TrendState (the ABI). Chart timeframe only; MTF is
-//  added in M2.4. The trend FORMULA lives entirely in the @internal helpers and
-//  is replaceable without changing TrendState (R2/R6/R7). No signals, orders,
-//  plots, or alerts. trendEvaluate is the sole producer of TrendState and the
-//  sole reader/updater of KernelState.trendMemory (R8/R9/R10).
+//  Produces the immutable TrendState (the ABI). One REPLACEABLE signed-strength
+//  formula is evaluated on the chart directly and on the HTF through the single
+//  Core wrapper ctxHtfValue; trendChartView/trendHtfView -> trendMergeViews then
+//  derive alignment and now-independent confidence/quality. The FORMULA stays in
+//  the @internal helpers and is replaceable without changing TrendState
+//  (R2/R6/R7). No signals, orders, plots, or alerts. trendEvaluate is the sole
+//  producer of TrendState and the sole reader/updater of KernelState.trendMemory
+//  (R8/R9/R10). request.security lives ONLY inside ctxHtfValue (ADR-0011/0015).
 // =============================================================================
 
-// trendChartView(tcfg)   @internal
-//   Responsibility : Compute the chart-timeframe directional view (normalized).
+// trendSignedStrength(tcfg)   @internal
+//   Responsibility : Evaluate the REPLACEABLE trend formula on the CURRENT
+//                    series, returning a single signed, normalized scalar in
+//                    [-1, 1] (sign = direction, magnitude = strength). One scalar
+//                    so the same expression can be read on the chart directly and
+//                    on the HTF via a SINGLE ctxHtfValue call (HTF budget = 1).
 //   Parameters     : tcfg — TrendConfig.
-//   Returns        : TrendTimeframeView (direction + strength in [0, 1]).
-//   Determinism    : deterministic; non-repainting (chart-TF, bar close).
-//   Note           : REPLACEABLE formula — fast/slow EMA separation scaled by ATR.
-//                    Raw EMA/ATR values stay local; never exposed (R6/R7).
-trendChartView(TrendConfig tcfg) =>
+//   Returns        : float in [-1, 1] (0 when the read is invalid / flat).
+//   Determinism    : deterministic; non-repainting (bar close).
+//   Note           : Raw EMA/ATR values stay local; never exposed (R6/R7).
+trendSignedStrength(TrendConfig tcfg) =>
     float fast = ta.ema(close, tcfg.fastLength)
     float slow = ta.ema(close, tcfg.slowLength)
     float atr  = ta.atr(tcfg.slowLength)
     bool  valid = utilIsValidNumber(fast) and utilIsValidNumber(slow) and utilIsValidNumber(atr) and atr > 0
-    Direction dir = not valid ? Direction.flat : fast > slow ? Direction.long : fast < slow ? Direction.short : Direction.flat
     float strength = not valid ? UTIL_NORMALIZED_MIN : utilClamp(utilSafeDiv(math.abs(fast - slow), atr, UTIL_NORMALIZED_MIN), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
-    TrendTimeframeView.new(dir, strength, ctxTimeframe().tfClass, valid)
+    not valid ? UTIL_NORMALIZED_MIN : math.sign(fast - slow) * strength
+
+// trendDecodeSigned(signed, tf)   @internal
+//   Responsibility : Decode a signed-strength scalar into a normalized
+//                    TrendTimeframeView (direction + magnitude), tagged with the
+//                    timeframe class it came from. Shared by chart and HTF reads.
+//   Parameters     : signed — signed strength in [-1, 1]; tf — TimeframeClass.
+//   Returns        : TrendTimeframeView (direction + strength in [0, 1]).
+//   Determinism    : pure.  Errors: none (na-safe).
+trendDecodeSigned(float signed, TimeframeClass tf) =>
+    bool valid = utilIsValidNumber(signed)
+    Direction dir = not valid ? Direction.flat : signed > 0 ? Direction.long : signed < 0 ? Direction.short : Direction.flat
+    float strength = not valid ? UTIL_NORMALIZED_MIN : utilClamp(math.abs(signed), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+    TrendTimeframeView.new(dir, strength, tf, valid)
+
+// trendChartView(tcfg)   @internal
+//   Responsibility : Compute the CHART-timeframe directional view (normalized) by
+//                    decoding the signed formula evaluated on the chart series.
+//   Parameters     : tcfg — TrendConfig.
+//   Returns        : TrendTimeframeView (direction + strength in [0, 1]).
+//   Determinism    : deterministic; non-repainting (chart-TF, bar close).
+trendChartView(TrendConfig tcfg) =>
+    trendDecodeSigned(trendSignedStrength(tcfg), ctxTimeframe().tfClass)
+
+// trendHtfView(tcfg)   @internal
+//   Responsibility : Compute the HIGHER-timeframe directional view by reading the
+//                    SAME signed formula through Core's ctxHtfValue. This is the
+//                    ONLY ctxHtfValue call site in the strategy (HTF budget = 1);
+//                    it never calls request.security itself (R/ADR-0011/0015).
+//   Parameters     : tcfg — TrendConfig (supplies htfTimeframe).
+//   Returns        : TrendTimeframeView (HTF direction + strength in [0, 1]).
+//   Determinism    : deterministic; non-repainting (confirmed HTF bar, expr[1]).
+trendHtfView(TrendConfig tcfg) =>
+    trendDecodeSigned(ctxHtfValue(tcfg.htfTimeframe, trendSignedStrength(tcfg)), TimeframeClass.other)
+
+// trendMergeViews(chart, htf, tcfg)   @internal
+//   Responsibility : Synthesize the chart and HTF views into the final direction,
+//                    strength, confidence, quality and alignment. Chart drives
+//                    direction/strength; the HTF confirms (raising confidence when
+//                    aligned, penalizing it when it disagrees). When MTF is off or
+//                    the HTF read is invalid the chart view stands alone.
+//   Parameters     : chart, htf — TrendTimeframeView; tcfg — TrendConfig.
+//   Returns        : [Direction dir, float strength, float confidence,
+//                     float quality, bool aligned] (all normalized to [0, 1]).
+//   Determinism    : pure.  Errors: none (na-safe via clamp helpers).
+trendMergeViews(TrendTimeframeView chart, TrendTimeframeView htf, TrendConfig tcfg) =>
+    bool useHtf = tcfg.useMtf and htf.valid
+    Direction dir = chart.direction
+    float strength = chart.strength
+    bool aligned = not useHtf ? true : chart.direction == htf.direction and chart.direction != Direction.flat
+    float confidenceRaw = not useHtf ? chart.strength : aligned ? math.avg(chart.strength, htf.strength) : math.max(UTIL_NORMALIZED_MIN, chart.strength - htf.strength)
+    float confidence = utilClamp(confidenceRaw, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+    float quality = utilClamp(math.avg(strength, confidence), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+    [dir, strength, confidence, quality, aligned]
 
 // trendClassifyStrength(strength, tcfg)   @internal
 //   Responsibility : Map a normalized strength to a discrete band.
@@ -937,21 +999,21 @@ trendClassifyPhase(Direction curDir, float curStrength, Direction prevDir, float
 //   Returns        : TrendState (per-bar snapshot).
 //   Determinism    : deterministic; non-repainting; O(1) per bar.
 //   Errors         : none (guards na via util helpers).
-//   Note           : chart-only baseline — confidence/quality track strength and
-//                    alignment is trivially true; MTF differentiates them in M2.4.
+//   Note           : MTF-aware — chart drives direction/strength; the HTF view
+//                    (via trendHtfView/ctxHtfValue) differentiates confidence and
+//                    quality and gates activeness through alignment. trendHtfView
+//                    is called UNCONDITIONALLY (v6 series safety); trendMergeViews
+//                    ignores it when tcfg.useMtf is off or the HTF read is invalid.
 trendEvaluate(KernelState state, BarContext context) =>
     // trendEvaluate is the sole toucher of trendMemory (R10) — including its lazy init.
     if na(state.trendMemory)
         state.trendMemory := TrendMemory.new()
     TrendConfig tcfg = cfgGet(state).trend
     TrendTimeframeView chart = trendChartView(tcfg)
-    Direction dir      = chart.direction
-    float     strength = chart.strength
-    float     confidence = dir == Direction.flat ? UTIL_NORMALIZED_MIN : strength
-    float     quality    = dir == Direction.flat ? UTIL_NORMALIZED_MIN : strength
-    bool      aligned    = true
+    TrendTimeframeView htf   = trendHtfView(tcfg)
+    [dir, strength, confidence, quality, aligned] = trendMergeViews(chart, htf, tcfg)
     TrendStrength band  = trendClassifyStrength(strength, tcfg)
-    bool      active    = dir != Direction.flat and strength >= tcfg.strengthThreshold
+    bool      active    = dir != Direction.flat and strength >= tcfg.strengthThreshold and (not tcfg.useMtf or aligned)
     TrendPhase phase    = trendClassifyPhase(dir, strength, state.trendMemory.previousDirection, state.trendMemory.previousStrength, state.trendMemory.barsInTrend, tcfg)
     TrendState ts = TrendState.new(dir, band, strength, confidence, quality, phase, aligned, active, context.barIndex)
     // Update cross-bar memory (only trendEvaluate; O(1)). Read prev* before overwriting.
@@ -977,7 +1039,7 @@ trendQuality(TrendState ts) => ts.quality
 trendPhase(TrendState ts) => ts.phase
 // trendIsActive(ts)   — tradeable trend present.
 trendIsActive(TrendState ts) => ts.isActive
-// trendIsAligned(ts)  — chart/HTF agreement (trivially true until M2.4).
+// trendIsAligned(ts)  — chart/HTF agreement (MTF; true when MTF off / HTF invalid).
 trendIsAligned(TrendState ts) => ts.aligned
 
 
@@ -1000,13 +1062,13 @@ trendIsAligned(TrendState ts) => ts.aligned
 // -----------------------------------------------------------------------------
 //  Single lifecycle wiring. coreInit() runs once (var initializer); coreOnBar()
 //  runs every bar and returns the BarContext; trendEvaluate() then computes the
-//  chart-timeframe TrendState. No orders, no plots, no alerts — the trend is
+//  multi-timeframe TrendState. No orders, no plots, no alerts — the trend is
 //  computed but NOT acted upon (zero trading behavior). `context` and `trend`
 //  are the integration seams the analysis/decision modules (03+, 09) will consume.
 // =============================================================================
 var KernelState coreState = coreInit()
 BarContext context = coreOnBar(coreState)
-// Module 02 — compute the chart-timeframe trend each bar. `trend` is the seam the
+// Module 02 — compute the multi-timeframe trend each bar. `trend` is the seam the
 // Signal Engine (09) etc. will consume; unused for now (no signals/orders/plots).
 TrendState trend = trendEvaluate(coreState, context)
 
@@ -1029,7 +1091,7 @@ TrendState trend = trendEvaluate(coreState, context)
 // -----------------------------------------------------------------------------
 //    [x] M2.1  Core ctxHtfValue HTF primitive                  (v0.1.1)
 //    [x] M2.2  Trend types, inputs, configuration              (v0.1.2)
-//    [x] M2.3  Chart-timeframe trend model                     (v0.1.3, current)
-//    [ ] M2.4  Multi-timeframe synthesis + confidence/quality  (v0.1.4)
+//    [x] M2.3  Chart-timeframe trend model                     (v0.1.3)
+//    [x] M2.4  Multi-timeframe synthesis + confidence/quality  (v0.1.4, current)
 //    [ ] M2.5  Integration + finalize (Trend API -> Stable)    (v0.2.0)
 // =============================================================================

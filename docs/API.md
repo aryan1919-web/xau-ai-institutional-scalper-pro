@@ -5,7 +5,7 @@ document grows alongside the code: every public function must be listed here wit
 its responsibility, parameters, return value, and notes (see
 [STYLE_GUIDE.md](STYLE_GUIDE.md) for documentation rules).
 
-- **Status:** Module 01 frozen (`v0.1.0`). Module 02 in progress — `v0.1.1` (M2.1: Core `ctxHtfValue`).
+- **Status:** Module 01 frozen (`v0.1.0`). Module 02 in progress — `v0.1.4` (M2.4: multi-timeframe synthesis).
 - **Scope:** Only functions intended for reuse across modules are "public" and
   documented here. Private, single-use helpers are documented inline.
 
@@ -164,7 +164,7 @@ None. (`ctxHtfValue` was implemented in `0.1.1` — see the context table above.
 
 ## Module 02 — Trend Engine
 
-Chart-timeframe trend model implemented (M2.3, `v0.1.3`); MTF arrives in M2.4. The `trend*`
+Multi-timeframe trend model implemented (M2.4, `v0.1.4`). The `trend*`
 public API is **Experimental until `v0.2.0`** (R5). `TrendState` is the immutable per-bar ABI
 (R6–R11); trend direction reuses Core `Direction` (no separate trend-direction enum).
 
@@ -179,11 +179,16 @@ public API is **Experimental until `v0.2.0`** (R5). `TrendState` is the immutabl
 | `trendQuality` | `trendQuality(ts)` | `float` 0..1 | pure accessor |
 | `trendPhase` | `trendPhase(ts)` | `TrendPhase` | pure accessor |
 | `trendIsActive` | `trendIsActive(ts)` | `bool` | pure accessor |
-| `trendIsAligned` | `trendIsAligned(ts)` | `bool` | pure accessor (trivially true until M2.4) |
+| `trendIsAligned` | `trendIsAligned(ts)` | `bool` | pure accessor (chart/HTF agreement; `true` when MTF off / HTF invalid) |
 
-**Internal helpers (Since 0.1.3):** `trendChartView`, `trendClassifyStrength`, `trendClassifyPhase`.
-The trend **formula lives entirely in these helpers** (fast/slow EMA + ATR in M2.3) and is
+**Internal helpers:** `trendSignedStrength`, `trendDecodeSigned`, `trendChartView`, `trendHtfView`,
+`trendMergeViews` (Since 0.1.4); `trendClassifyStrength`, `trendClassifyPhase` (Since 0.1.3).
+The trend **formula lives entirely in these helpers** — one signed-strength scalar (fast/slow EMA
+scaled by ATR) is evaluated on the chart directly and on the HTF through Core's `ctxHtfValue`,
+then `trendMergeViews` synthesizes direction/strength/confidence/quality/alignment. The formula is
 replaceable without changing `TrendState` (R2/R7); raw indicator values never reach `TrendState` (R6).
+`trendHtfView` holds the **only** `ctxHtfValue` call site in the strategy (HTF budget = 1);
+`request.security` remains exclusively inside `ctxHtfValue`.
 
 ### Enums (Since 0.1.2)
 
@@ -204,9 +209,9 @@ replaceable without changing `TrendState` (R2/R7); raw indicator values never re
 - **Inputs** (group *02 · Trend Engine*, read only by `cfgBuild`): `inpEnableTrend`,
   `inpTrendUseMtf`, `inpTrendHtf`, `inpTrendFastLength`, `inpTrendSlowLength`,
   `inpTrendFlatThreshold`, `inpTrendStrengthThreshold`, `inpTrendConfirmBars`.
-- **Validation** (in `cfgValidate`; returns `ValidationResult` only): `TREND-CFG-002` fast ≥ slow
-  (fatal); `TREND-CFG-003` threshold out of `[0,1]` (recoverable clamp+warn). `TREND-CFG-001`
-  (HTF ≥ chart timeframe) is reserved for M2.4.
+- **Validation** (in `cfgValidate`; returns `ValidationResult` only): `TREND-CFG-001` HTF < chart
+  timeframe when MTF is on (fatal, active since `0.1.4`); `TREND-CFG-002` fast ≥ slow (fatal);
+  `TREND-CFG-003` threshold out of `[0,1]` (recoverable clamp+warn).
 
 ## Other module public functions
 

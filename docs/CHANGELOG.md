@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.1.4] - 2026-07-01
+
+Module 02 (Trend Engine) — milestone **M2.4: multi-timeframe synthesis**. The chart-timeframe
+trend is now confirmed against a higher timeframe, with independent confidence and quality; still
+no signals/orders/plots/alerts. (The `v0.1.4` git tag is created manually after review.)
+
+### Added
+- **Internal helpers:** `trendSignedStrength` (one signed-strength scalar in `[-1, 1]` — the
+  replaceable formula evaluated on the current series), `trendDecodeSigned` (decodes a signed
+  scalar into a `TrendTimeframeView`), `trendHtfView` (reads the same formula on the HTF), and
+  `trendMergeViews` (synthesizes chart + HTF into direction/strength/confidence/quality/alignment).
+- **Validation:** `TREND-CFG-001` (fatal) now active — when MTF confirmation is on, the HTF
+  timeframe must be `>=` the chart timeframe.
+
+### Changed
+- `PROJECT_VERSION` `0.1.3` → `0.1.4`.
+- **`ctxHtfValue` is now invoked** for the first time, from `trendHtfView` — the single
+  `ctxHtfValue` call site in the strategy (HTF budget = 1). The lone `request.security` still
+  lives **only** inside `ctxHtfValue` (executable count = 1).
+- `trendChartView` refactored to decode `trendSignedStrength` (shared formula) via
+  `trendDecodeSigned` — behavior on the chart is unchanged.
+- `trendEvaluate` now consumes `trendChartView` + `trendHtfView` through `trendMergeViews`;
+  `confidence`/`quality` are independent of `strength` and `isActive` is gated by `aligned`
+  when MTF is on. Remains the sole producer of `TrendState` and sole toucher of `trendMemory`.
+- `trendIsAligned` now reports real chart/HTF agreement (was trivially `true`).
+- `docs/ROADMAP.md`: current marker moved to `0.1.4`.
+
+### Notes
+- **Non-repainting preserved:** the HTF read uses Core's frozen `ctxHtfValue` (`expr[1]`,
+  `lookahead_off`, `gaps_off`; 1 HTF-bar lag; history == realtime). `trendHtfView` is called
+  unconditionally for Pine v6 series safety; `trendMergeViews` ignores it when MTF is off or the
+  HTF read is invalid, so the chart view stands alone.
+- **Budgets:** total executable `request.security` = 1; Trend active HTF usage = 1 (≤ 2);
+  project ≤ 8. No new public API surface; `TrendTimeframeView` stays internal-only.
+- Next: M2.5 (`0.2.0`) — Module 02 integration; Trend API promoted to Stable; `TrendState` ABI locked.
+
 ## [0.1.3] - 2026-07-01
 
 Module 02 (Trend Engine) — milestone **M2.3: chart-timeframe trend model**. The trend now
@@ -260,7 +296,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.1.3...HEAD
+[Unreleased]: https://example.com/compare/v0.1.4...HEAD
+[0.1.4]: https://example.com/compare/v0.1.3...v0.1.4
 [0.1.3]: https://example.com/compare/v0.1.2...v0.1.3
 [0.1.2]: https://example.com/compare/v0.1.1...v0.1.2
 [0.1.1]: https://example.com/compare/v0.1.0...v0.1.1

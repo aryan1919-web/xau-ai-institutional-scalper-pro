@@ -3,7 +3,7 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** In implementation — M2.1 (`v0.1.1`) + M2.2 (`v0.1.2`) + M2.3 (`v0.1.3`) done · **Target version:** `0.2.0` · **Depends on:** Module 01
+> **Status:** In implementation — M2.1 (`v0.1.1`) + M2.2 (`v0.1.2`) + M2.3 (`v0.1.3`) + M2.4 (`v0.1.4`) done · **Target version:** `0.2.0` · **Depends on:** Module 01
 
 ## Overview
 
@@ -51,8 +51,9 @@ Types + configuration only — no trend logic yet.
 - **`TrendMemory`** — minimal cross-bar memory, nested as `KernelState.trendMemory`, initialized
   empty by `stateInit`: `previousDirection/Phase/Strength`, `barsInTrend`, `reversalCounter`,
   `transitionCounter`.
-- **Validation** (in `cfgValidate`, `ValidationResult` only): `TREND-CFG-002` fast ≥ slow (fatal),
-  `TREND-CFG-003` threshold out of `[0,1]` (recoverable). `TREND-CFG-001` (HTF ≥ chart) reserved for M2.4.
+- **Validation** (in `cfgValidate`, `ValidationResult` only): `TREND-CFG-001` HTF < chart when MTF
+  on (fatal, active since `0.1.4`), `TREND-CFG-002` fast ≥ slow (fatal), `TREND-CFG-003` threshold
+  out of `[0,1]` (recoverable).
 
 ## Chart-timeframe model (M2.3, v0.1.3)
 
@@ -60,14 +61,31 @@ Types + configuration only — no trend logic yet.
   result unused — no signals/orders/plots). It is the sole producer of `TrendState` and the sole
   reader/updater of `KernelState.trendMemory` (R8/R9/R10; `trendMemory` is lazily initialized here).
 - The chart-TF **formula** (fast/slow EMA separation scaled by ATR, normalized to `[0,1]`) lives
-  entirely in `@internal` `trendChartView`; it is **replaceable** without changing the ABI
-  (R2/R6/R7). Raw EMA/ATR values never reach `TrendState` (R6).
+  entirely in the `@internal` helpers (`trendSignedStrength` since M2.4; decoded by `trendChartView`);
+  it is **replaceable** without changing the ABI (R2/R6/R7). Raw EMA/ATR values never reach `TrendState` (R6).
 - `trendClassifyStrength` maps strength → band; `trendClassifyPhase` derives the lifecycle phase
   from current values + the previous-bar memory (stateless — memory passed as parameters, R10).
-- Chart-only baseline: `confidence`/`quality` track `strength` and `aligned` is trivially true;
-  multi-timeframe confirmation differentiates them in **M2.4**.
 - Pure accessors: `trendDirection/Strength/Confidence/Quality/Phase/IsActive/IsAligned`
   (Experimental until `v0.2.0`, R5).
+
+## Multi-timeframe synthesis (M2.4, v0.1.4)
+
+- The trend **formula** is now a single signed-strength scalar in `[-1, 1]` (`@internal`
+  `trendSignedStrength` — sign = direction, magnitude = strength). Evaluating one scalar lets the
+  **same** expression run on the chart directly and on the HTF through a single `ctxHtfValue` call.
+- Pipeline: `trendChartView` / `trendHtfView` → `trendMergeViews` → `trendEvaluate`
+  (D-invariant #3 — chart-TF and HTF evaluation stay separated; HTF stays optional and replaceable).
+  `trendDecodeSigned` turns a signed scalar into a `TrendTimeframeView` for both paths.
+- `trendMergeViews`: chart drives `direction`/`strength`; the HTF **confirms** — `confidence` is the
+  chart/HTF strength average when they `align`, and is penalized (`chart − htf`, floored at 0) when
+  they disagree; `quality` averages `strength` and `confidence`. With MTF off or an invalid HTF read
+  the chart view stands alone (`aligned = true`). `isActive` additionally requires `aligned` when MTF is on.
+- **`ctxHtfValue` is the ONLY `request.security` wrapper and `trendHtfView` its ONLY call site**
+  (HTF budget = 1 ≤ 2; project ≤ 8). Non-repainting is inherited from the frozen wrapper
+  (`expr[1]`, `lookahead_off`, `gaps_off`; 1 HTF-bar lag). `trendHtfView` is invoked unconditionally
+  (Pine v6 series safety); the merge decides whether to use it.
+- `TrendTimeframeView` remains an **internal transport** only — never part of the public API; raw
+  EMA/ATR/slope values never reach `TrendState` (R6).
 
 ## Design decisions
 
