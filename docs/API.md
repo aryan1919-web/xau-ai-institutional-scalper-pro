@@ -99,13 +99,15 @@ a parameter-less form.
 | `ctxBuild` | `ctxBuild(cfg)` | `BarContext` | Experimental | 0.0.4 |
 | `ctxIsConfirmedBar` | `ctxIsConfirmedBar()` | `bool` | Stable | 0.0.4 |
 | `ctxIsNewBar` | `ctxIsNewBar()` | `bool` | Stable | 0.0.4 |
-| `ctxHtfValue` | `ctxHtfValue(symbol, tf, expr)` | `float` | Stable | 0.1.1 |
+| `ctxHtfValue` | `ctxHtfValue(tf, expr)` | `float` | Stable | 0.1.1 |
 
 Per-bar context is strictly non-repainting (current-bar builtins only). **`ctxHtfValue` is the
 single sanctioned higher-timeframe read** and the **only** place `request.security` appears in
 the entire strategy (ADR-0011): it fixes `lookahead = barmerge.lookahead_off`,
 `gaps = barmerge.gaps_off`, and reads `expr[1]` so only closed HTF bars are used (1 HTF-bar
-lag by design). Modules consume `ctxHtfValue`, never `request.security` directly. Session
+lag by design). **Core owns symbol context** — `ctxHtfValue` always reads the chart symbol
+(`syminfo.tickerid`), so modules never pass a symbol. Modules consume `ctxHtfValue`, never
+`request.security` directly. Session
 state is exposed through `BarContext.session` (built by the internal `ctxComputeSession`),
 so a separate public `ctxSessionState` is not needed.
 

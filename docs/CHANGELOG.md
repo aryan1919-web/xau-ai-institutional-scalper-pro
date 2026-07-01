@@ -17,14 +17,18 @@ defined but not yet invoked; no trend logic. (The `v0.1.1` git tag is created ma
 after review.)
 
 ### Added
-- **`ctxHtfValue(symbol, tf, expr) → float`** (`ctx`, Stable, Since 0.1.1): the single
-  sanctioned higher-timeframe read and the **only** `request.security` in the strategy
-  (ADR-0011). Non-repainting — `lookahead_off`, `gaps_off`, `expr[1]` (last-closed HTF bar;
-  1 HTF-bar lag by design).
+- **`ctxHtfValue(tf, expr) → float`** (`ctx`, Stable, Since 0.1.1): the single sanctioned
+  higher-timeframe read and the **only** `request.security` in the strategy (ADR-0011).
+  Non-repainting — `lookahead_off`, `gaps_off`, `expr[1]` (last-closed HTF bar; 1 HTF-bar lag
+  by design). **Core owns symbol context** — always reads `syminfo.tickerid`; modules pass no symbol.
 - **`ctxIsHigherTimeframe(tf) → bool`** (internal, Since 0.1.1): HTF ≥ chart-timeframe validation.
 
 ### Changed
 - `PROJECT_VERSION` `0.1.0` → `0.1.1`.
+- **Interface simplification (`refactor(core)`):** `ctxHtfValue(symbol, tf, expr)` →
+  `ctxHtfValue(tf, expr)`; the chart symbol (`syminfo.tickerid`) is applied internally. No
+  behavior change (modules would have passed exactly `syminfo.tickerid`); still one
+  `request.security`, still non-repainting.
 - `docs/API.md`: `ctxHtfValue` moved from *Reserved* to *Implemented* (context table); Reserved
   section is now empty.
 - `docs/ROADMAP.md`: added the Module 02 sub-milestone version rows (`0.1.1`–`0.2.0`); current

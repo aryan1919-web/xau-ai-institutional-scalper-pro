@@ -655,13 +655,14 @@ ctxBuild(Config cfg) =>
 ctxIsHigherTimeframe(string tf) =>
     timeframe.in_seconds(tf) >= timeframe.in_seconds()
 
-// ctxHtfValue(symbol, tf, expr)   @stable
+// ctxHtfValue(tf, expr)   @stable
 //   Responsibility : The single sanctioned higher-timeframe read. ALL
 //                    request.security in the strategy lives here (ADR-0011);
 //                    modules consume this, never request.security directly.
-//   Parameters     : symbol — ticker id (e.g. syminfo.tickerid).
-//                    tf     — target timeframe string (>= chart timeframe).
-//                    expr   — series float to evaluate in the HTF context.
+//                    Core owns symbol context — the current chart symbol
+//                    (syminfo.tickerid) is always used; modules never pass one.
+//   Parameters     : tf   — target timeframe string (>= chart timeframe).
+//                    expr — series float to evaluate in the HTF context.
 //   Returns        : float — the value from the last CLOSED HTF bar.
 //   Determinism    : deterministic; non-repainting.
 //   Non-repainting : lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off,
@@ -671,8 +672,8 @@ ctxIsHigherTimeframe(string tf) =>
 //                    guard with utilIsValidNumber).
 //   Note           : parameter is named `tf` (not `timeframe`) to avoid shadowing
 //                    the `timeframe.*` builtin namespace.
-ctxHtfValue(string symbol, string tf, float expr) =>
-    request.security(symbol, tf, expr[1], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+ctxHtfValue(string tf, float expr) =>
+    request.security(syminfo.tickerid, tf, expr[1], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
 
 // -----------------------------------------------------------------------------
 //  Core · state — single persistent KernelState (M1.4).

@@ -61,7 +61,7 @@ Stability levels per the [API Stability Policy](../../../docs/API.md): **S**tabl
 | `ctxIsConfirmedBar` | `ctxIsConfirmedBar()` | `bool` | S |
 | `ctxIsNewBar` | `ctxIsNewBar()` | `bool` | S |
 | `ctxSessionState` | `ctxSessionState(Config)` | `SessionState` | E |
-| `ctxHtfValue` | `ctxHtfValue(symbol, timeframe, expr)` | `<series>` | S |
+| `ctxHtfValue` | `ctxHtfValue(tf, expr)` | `float` | S |
 | `utilClamp` | `utilClamp(value, lo, hi)` | `float` | S |
 | `utilSafeDiv` | `utilSafeDiv(num, den, fallback)` | `float` | S |
 | `utilNormalize` | `utilNormalize(value, lo, hi)` | `float` (0..1) | S |

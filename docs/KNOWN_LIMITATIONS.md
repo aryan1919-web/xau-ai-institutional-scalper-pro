@@ -44,7 +44,8 @@ before relying on a specific figure.**
 - Higher-timeframe values update only when the HTF bar closes; account for this
   in signal timing.
 - **Single sanctioned wrapper (Since 0.1.1):** all `request.security` in this strategy
-  goes through Core's `ctxHtfValue(symbol, tf, expr)` (ADR-0011). It fixes
+  goes through Core's `ctxHtfValue(tf, expr)` (ADR-0011; Core owns symbol context and
+  always reads `syminfo.tickerid`). It fixes
   `lookahead = barmerge.lookahead_off`, `gaps = barmerge.gaps_off`, and reads `expr[1]`
   (the last **closed** HTF bar) — a deliberate **1 HTF-bar lag** that guarantees
   historical == realtime. No module may call `request.security` directly, and the project
