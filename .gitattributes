@@ -1,0 +1,14 @@
+# Normalize line endings across platforms.
+# All text files are stored with LF in the repository.
+* text=auto eol=lf
+
+# Explicit text types.
+*.pine text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Treat Pine source as its closest known language for diff/linguist purposes.
+*.pine linguist-language=JavaScript

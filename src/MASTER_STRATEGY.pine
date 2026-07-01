@@ -1,0 +1,270 @@
+// SPDX-License-Identifier: MIT
+//@version=6
+// =============================================================================
+//  XAU AI Institutional Scalper Pro
+// -----------------------------------------------------------------------------
+//  Project      : xau-ai-institutional-scalper-pro
+//  File         : src/MASTER_STRATEGY.pine
+//  Purpose      : Primary strategy entry point. This file is the ONLY artifact
+//                 compiled by TradingView. All future modules are integrated
+//                 into this single file (module documentation lives under
+//                 src/modules/ as markdown only).
+//  Market       : XAUUSD (Gold vs. US Dollar)
+//  Timeframes   : M1, M5 (intraday scalping)
+//  Version      : 0.0.1  (framework only — no functionality yet)
+//  License      : MIT (see LICENSE)
+//  Language     : Pine Script v6 ONLY
+//
+//  STATUS       : FRAMEWORK ONLY.
+//                 This file intentionally contains NO trading logic:
+//                   - No indicators (no EMA / RSI / ATR / ADX / ...)
+//                   - No entries, no exits, no order management
+//                   - No Smart Money / Support-Resistance / Dashboard / Alerts
+//                   - No calculations of any kind
+//                 It establishes the compile-clean skeleton only. Trading logic
+//                 is added incrementally, one module at a time, per docs/ROADMAP.md.
+//
+//  REPAINTING   : This project forbids repainting logic. When modules are
+//                 implemented, all higher-timeframe access MUST use
+//                 request.security(..., lookahead = barmerge.lookahead_off) with
+//                 confirmed (barstate.isconfirmed) values, and signals are acted
+//                 upon on bar close only. No future-leaking constructs.
+//
+//  DETERMINISM  : The eventual AI scoring engine (Module 09) MUST be fully
+//                 deterministic and explainable. No black-box logic.
+//
+//  See also     : docs/SPECIFICATION.md, docs/ARCHITECTURE.md, docs/STYLE_GUIDE.md,
+//                 docs/KNOWN_LIMITATIONS.md, docs/DECISIONS.md
+// =============================================================================
+
+
+// =============================================================================
+//  STRATEGY DECLARATION
+// -----------------------------------------------------------------------------
+//  Declaration only. Metadata is explicit and conservative. No orders are
+//  generated anywhere in this framework build.
+// =============================================================================
+strategy(
+     title                  = "XAU AI Institutional Scalper Pro",
+     shorttitle             = "XAU-AISP",
+     overlay                = true,
+     pyramiding             = 0,
+     initial_capital        = 10000,
+     default_qty_type       = strategy.percent_of_equity,
+     default_qty_value      = 1,
+     currency               = currency.USD,
+     commission_type        = strategy.commission.percent,
+     commission_value       = 0.0,
+     slippage               = 0,
+     calc_on_every_tick     = false,
+     process_orders_on_close = true,
+     close_entries_rule     = "ANY")
+
+
+// =============================================================================
+//  CONSTANTS
+// -----------------------------------------------------------------------------
+//  Structural constants only (identity / metadata). There are deliberately NO
+//  indicator parameters or numeric trading thresholds here — those arrive with
+//  their owning modules. Named constants exist so that no "magic numbers" leak
+//  into future logic.
+// =============================================================================
+
+// -- Project identity ---------------------------------------------------------
+const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
+const string PROJECT_VERSION = "0.0.1"
+const string PRIMARY_SYMBOL  = "XAUUSD"
+
+// -- Total number of planned modules (see docs/ROADMAP.md). Used only for
+//    documentation / self-description; no logic depends on this value yet.
+const int MODULE_COUNT = 14
+
+
+// =============================================================================
+//  INPUT GROUPS
+// -----------------------------------------------------------------------------
+//  One collapsible group banner per future module so the settings panel is
+//  organised from day one. Inputs here are neutral placeholders (a single
+//  "enabled" toggle per module) that are READ BY NOTHING — no logic consumes
+//  them in this framework build. Real parameters are added with their modules.
+//
+//  Configuration is intentionally separated from logic (see AGENTS.md).
+// =============================================================================
+
+// -- Group titles (kept as constants to avoid duplicated string literals) -----
+const string G_01_CORE       = "01 · Core Framework"
+const string G_02_TREND      = "02 · Trend Engine"
+const string G_03_MOMENTUM   = "03 · Momentum Engine"
+const string G_04_SR         = "04 · Support / Resistance Engine"
+const string G_05_STRUCTURE  = "05 · Market Structure"
+const string G_06_LIQUIDITY  = "06 · Liquidity"
+const string G_07_ORDERBLOCK = "07 · Order Blocks"
+const string G_08_FVG        = "08 · Fair Value Gap"
+const string G_09_SIGNAL     = "09 · Signal Engine"
+const string G_10_TRADE      = "10 · Trade Engine"
+const string G_11_RISK       = "11 · Risk Manager"
+const string G_12_DASHBOARD  = "12 · Dashboard"
+const string G_13_ALERTS     = "13 · Alerts"
+const string G_14_OPTIMIZE   = "14 · Optimization"
+
+// -- Placeholder module toggles (declared, intentionally unused for now) ------
+//    Each toggle defaults to false so that, even once wired, no module is
+//    silently active. `tooltip` documents intent for the end user.
+bool inpEnableCore       = input.bool(false, "Enable Module (placeholder)", group = G_01_CORE,       tooltip = "Core framework services. Placeholder — no effect in v0.0.1.")
+bool inpEnableTrend      = input.bool(false, "Enable Module (placeholder)", group = G_02_TREND,      tooltip = "Trend engine. Placeholder — no effect in v0.0.1.")
+bool inpEnableMomentum   = input.bool(false, "Enable Module (placeholder)", group = G_03_MOMENTUM,   tooltip = "Momentum engine. Placeholder — no effect in v0.0.1.")
+bool inpEnableSr         = input.bool(false, "Enable Module (placeholder)", group = G_04_SR,         tooltip = "Support/Resistance engine. Placeholder — no effect in v0.0.1.")
+bool inpEnableStructure  = input.bool(false, "Enable Module (placeholder)", group = G_05_STRUCTURE,  tooltip = "Market structure. Placeholder — no effect in v0.0.1.")
+bool inpEnableLiquidity  = input.bool(false, "Enable Module (placeholder)", group = G_06_LIQUIDITY,  tooltip = "Liquidity mapping. Placeholder — no effect in v0.0.1.")
+bool inpEnableOrderBlock = input.bool(false, "Enable Module (placeholder)", group = G_07_ORDERBLOCK, tooltip = "Order blocks. Placeholder — no effect in v0.0.1.")
+bool inpEnableFvg        = input.bool(false, "Enable Module (placeholder)", group = G_08_FVG,        tooltip = "Fair value gaps. Placeholder — no effect in v0.0.1.")
+bool inpEnableSignal     = input.bool(false, "Enable Module (placeholder)", group = G_09_SIGNAL,     tooltip = "Deterministic signal engine. Placeholder — no effect in v0.0.1.")
+bool inpEnableTrade      = input.bool(false, "Enable Module (placeholder)", group = G_10_TRADE,      tooltip = "Trade engine. Placeholder — no effect in v0.0.1.")
+bool inpEnableRisk       = input.bool(false, "Enable Module (placeholder)", group = G_11_RISK,       tooltip = "Risk manager. Placeholder — no effect in v0.0.1.")
+bool inpEnableDashboard  = input.bool(false, "Enable Module (placeholder)", group = G_12_DASHBOARD,  tooltip = "On-chart dashboard. Placeholder — no effect in v0.0.1.")
+bool inpEnableAlerts     = input.bool(false, "Enable Module (placeholder)", group = G_13_ALERTS,     tooltip = "Alert routing. Placeholder — no effect in v0.0.1.")
+bool inpEnableOptimize   = input.bool(false, "Enable Module (placeholder)", group = G_14_OPTIMIZE,   tooltip = "Optimization helpers. Placeholder — no effect in v0.0.1.")
+
+
+// =============================================================================
+//  UTILITY FUNCTIONS (PLACEHOLDERS)
+// -----------------------------------------------------------------------------
+//  Documented, single-responsibility stubs that return trivial values. They
+//  contain NO trading logic and perform NO calculations. They exist so the
+//  framework compiles and so future modules have named seams to grow into.
+//  Signatures are provisional and may change when modules are implemented.
+// =============================================================================
+
+// isFrameworkOnly()
+//   Responsibility : Report whether this build is framework-only (no logic).
+//   Returns        : bool — always true in v0.0.1.
+//   Note           : Placeholder self-description helper. No side effects.
+isFrameworkOnly() =>
+    true
+
+// projectVersion()
+//   Responsibility : Expose the compiled project version string.
+//   Returns        : string — PROJECT_VERSION.
+//   Note           : Placeholder accessor. No side effects.
+projectVersion() =>
+    PROJECT_VERSION
+
+// noop()
+//   Responsibility : Explicit no-operation seam.
+//   Returns        : void.
+//   Note           : Placeholder. Does nothing by design. Kept so future
+//                    modules have a documented pattern for void utilities.
+noop() =>
+    // TODO(module): replace with real utility helpers as modules are added.
+    na
+
+
+// =============================================================================
+//  MODULE PLACEHOLDERS
+// -----------------------------------------------------------------------------
+//  One clearly delimited section per planned module. Each is a documentation
+//  seam ONLY — no code runs here yet. Implementation order and scope are
+//  authoritative in docs/SPECIFICATION.md and docs/ROADMAP.md.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+//  MODULE 01 — Core Framework
+//  Responsibility: Foundational services, config plumbing, shared types/state.
+//  TODO: implement per src/modules/01-core-framework/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 02 — Trend Engine
+//  Responsibility: Directional bias / trend regime classification.
+//  TODO: implement per src/modules/02-trend-engine/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 03 — Momentum Engine
+//  Responsibility: Momentum / strength assessment.
+//  TODO: implement per src/modules/03-momentum-engine/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 04 — Support / Resistance Engine
+//  Responsibility: Structural price levels.
+//  TODO: implement per src/modules/04-support-resistance/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 05 — Market Structure
+//  Responsibility: Swing points, BOS / CHoCH classification.
+//  TODO: implement per src/modules/05-market-structure/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 06 — Liquidity
+//  Responsibility: Liquidity pools / sweeps mapping.
+//  TODO: implement per src/modules/06-liquidity/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 07 — Order Blocks
+//  Responsibility: Institutional order block detection.
+//  TODO: implement per src/modules/07-order-blocks/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 08 — Fair Value Gap
+//  Responsibility: Imbalance / FVG detection.
+//  TODO: implement per src/modules/08-fair-value-gap/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 09 — Signal Engine
+//  Responsibility: Deterministic, explainable scoring / signal synthesis.
+//  TODO: implement per src/modules/09-signal-engine/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 10 — Trade Engine
+//  Responsibility: Entry / exit orchestration (order placement).
+//  TODO: implement per src/modules/10-trade-engine/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 11 — Risk Manager
+//  Responsibility: Position sizing, stops, exposure control.
+//  TODO: implement per src/modules/11-risk-manager/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 12 — Dashboard
+//  Responsibility: On-chart informational panel.
+//  TODO: implement per src/modules/12-dashboard/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 13 — Alerts
+//  Responsibility: Alert condition routing / messaging.
+//  TODO: implement per src/modules/13-alerts/README.md
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  MODULE 14 — Optimization
+//  Responsibility: Parameter optimization helpers / diagnostics.
+//  TODO: implement per src/modules/14-optimization/README.md
+// -----------------------------------------------------------------------------
+
+
+// =============================================================================
+//  TODO — ROADMAP SUMMARY
+// -----------------------------------------------------------------------------
+//  Framework only (v0.0.1). Implement modules incrementally; each milestone
+//  must compile, pass review, and be committed before the next begins.
+//
+//    [ ] 01 Core Framework          [ ] 08 Fair Value Gap
+//    [ ] 02 Trend Engine            [ ] 09 Signal Engine
+//    [ ] 03 Momentum Engine         [ ] 10 Trade Engine
+//    [ ] 04 Support / Resistance    [ ] 11 Risk Manager
+//    [ ] 05 Market Structure        [ ] 12 Dashboard
+//    [ ] 06 Liquidity               [ ] 13 Alerts
+//    [ ] 07 Order Blocks            [ ] 14 Optimization
+//
+//  See docs/ROADMAP.md for the authoritative milestone plan.
+// =============================================================================
