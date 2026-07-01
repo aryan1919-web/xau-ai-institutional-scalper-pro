@@ -159,3 +159,26 @@ Statuses: `Proposed` · `Accepted` · `Superseded` · `Deprecated`.
   [ARCHITECTURE.md](ARCHITECTURE.md) dependency graph.
 - **Consequences:** Upward-only, acyclic dependencies are enforceable in review; changes
   to a module's contract require an ADR.
+
+## ADR-0015 — Frozen HTF API contract (`ctxHtfValue`)
+
+- **Status:** Accepted
+- **Context:** Higher-timeframe access is the primary source of repainting and of
+  `request.security` budget pressure. It must be centralized, non-repainting, and stable so
+  every module reads HTF data the same way and no module can reintroduce look-ahead bias.
+- **Decision:** **`ctxHtfValue(tf, expr)` is the only approved wrapper around
+  `request.security()`, and this contract is frozen.** Specifically:
+  - Modules must **never** call `request.security()` directly; **all** higher-timeframe reads
+    pass through `ctxHtfValue()`.
+  - `ctxHtfValue()` is owned **exclusively by Core**; future modules may consume it but may not
+    **duplicate or replace** it.
+  - Non-repainting is guaranteed by `lookahead = barmerge.lookahead_off`,
+    `gaps = barmerge.gaps_off`, and previous-bar confirmation `expr[1]` (only the last **closed**
+    HTF bar is read — a 1 HTF-bar lag; history == realtime).
+  - **Core owns symbol context**: `ctxHtfValue` always reads `syminfo.tickerid`; modules never
+    pass a symbol.
+  - **Any change to `ctxHtfValue`'s behavior requires a new ADR** (and a SemVer review).
+- **Consequences:** A single, auditable, non-repainting HTF surface; the `request.security`
+  budget stays enforceable (ADR-0013); modules depend only on the contract, never the
+  mechanism (reinforces ADR-0011). Supersedes nothing; formalizes and freezes ADR-0011 for the
+  now-implemented `ctxHtfValue`.

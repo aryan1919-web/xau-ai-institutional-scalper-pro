@@ -15,9 +15,26 @@ Signal Engine (Module 09).
 
 - Emits a deterministic trend state (e.g. bias direction + strength) with named
   contributing factors — no opaque logic ([ADR-0003](../../../docs/DECISIONS.md)).
-- Higher-timeframe context (if used) via `request.security(..., lookahead_off)`.
+- Higher-timeframe context is read **only** through Core's `ctxHtfValue(tf, expr)`
+  (see the HTF API contract below) — never `request.security()` directly.
 - Authoritative behavior tracked here and in
   [../../../docs/SPECIFICATION.md](../../../docs/SPECIFICATION.md).
+
+## HTF API contract (FROZEN)
+
+Module 02 (and every module) accesses higher-timeframe data through the single frozen Core
+wrapper ([ADR-0015](../../../docs/DECISIONS.md), [API.md](../../../docs/API.md)):
+
+- **`ctxHtfValue(tf, expr)` is the only approved wrapper around `request.security()`.**
+  Modules must **never** call `request.security()` directly.
+- `ctxHtfValue()` is owned **exclusively by Core**; Module 02 **consumes** it and may not
+  duplicate or replace it.
+- **Non-repainting:** `lookahead = barmerge.lookahead_off`, `gaps = barmerge.gaps_off`, and
+  previous-bar confirmation `expr[1]` (last **closed** HTF bar; 1 HTF-bar lag; history == realtime).
+- **Core owns symbol context:** `ctxHtfValue` always reads `syminfo.tickerid`; Module 02 never
+  passes a symbol.
+- Any change to `ctxHtfValue`'s behavior requires a **new ADR**. Trend `request.security`
+  budget ≤ 2 (project ≤ 8), raised only by ADR.
 
 ## Design decisions
 

@@ -118,6 +118,23 @@ so a separate public `ctxSessionState` is not needed.
 `logInitBuffer` a single-source ring-buffer allocator, that keep the public functions free of
 duplicated logic (no-duplication rule).
 
+### HTF API Contract (FROZEN)
+
+`ctxHtfValue(tf, expr)` is the **only** approved wrapper around `request.security()`. This
+contract is frozen ([ADR-0015](DECISIONS.md)); changing its behavior requires a new ADR.
+
+- Modules must **never** call `request.security()` directly. **All** higher-timeframe reads
+  pass through `ctxHtfValue()`.
+- The implementation of `ctxHtfValue()` is owned **exclusively by Core**. Future modules may
+  **consume** it but may not **duplicate or replace** it.
+- **Non-repainting guarantee** — the value is stable for a confirmed bar and identical in
+  history and realtime, via:
+  - `lookahead = barmerge.lookahead_off` (no future leakage),
+  - `gaps = barmerge.gaps_off` (carry last known HTF value; no `na` holes),
+  - `expr[1]` — previous-bar confirmation: only the **last closed** HTF bar is read (1 HTF-bar lag).
+- **Core owns symbol context** — `ctxHtfValue` always reads the chart symbol
+  (`syminfo.tickerid`); modules never pass a symbol.
+
 ### Implemented — kernel state (`state`) · Since 0.1.0
 
 | Function | Signature | Returns | Level |

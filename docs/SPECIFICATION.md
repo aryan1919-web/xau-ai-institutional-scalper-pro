@@ -130,6 +130,24 @@ each module declares its allotment in its README and reuses objects rather than 
 A concise copy of this table is mirrored in [STYLE_GUIDE.md](STYLE_GUIDE.md) for
 day-to-day reference.
 
+## HTF API Contract (frozen)
+
+Higher-timeframe data access is governed by a single, frozen contract
+([ADR-0015](DECISIONS.md)). It is binding for every module.
+
+- **`ctxHtfValue(tf, expr)` is the only approved wrapper around `request.security()`.**
+  Modules must **never** call `request.security()` directly; all higher-timeframe reads pass
+  through `ctxHtfValue()`.
+- The implementation is owned **exclusively by Core**. Future modules may consume it but may
+  **not duplicate or replace** it. Any behavior change requires a **new ADR**.
+- **Non-repainting guarantee:** `lookahead = barmerge.lookahead_off`, `gaps = barmerge.gaps_off`,
+  and previous-bar confirmation `expr[1]` (only the last **closed** HTF bar is read — a 1
+  HTF-bar lag; history == realtime).
+- **Core owns symbol context:** `ctxHtfValue` always reads the chart symbol
+  (`syminfo.tickerid`); modules never pass a symbol.
+- Consistent with the [Performance Budget](#performance-budget): `request.security` ≤ 8
+  project-wide (Trend ≤ 2); raising it requires an ADR.
+
 ## 7. Determinism and explainability (binding)
 
 The signal engine (Module 09) MUST:
