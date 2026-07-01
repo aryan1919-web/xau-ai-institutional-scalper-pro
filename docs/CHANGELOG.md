@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.1.1] - 2026-07-01
+
+Module 02 (Trend Engine) — milestone **M2.1: Core `ctxHtfValue` HTF primitive**. The
+reserved Core primitive is implemented (behavior-frozen Core, additively extended per D1);
+defined but not yet invoked; no trend logic. (The `v0.1.1` git tag is created manually
+after review.)
+
+### Added
+- **`ctxHtfValue(symbol, tf, expr) → float`** (`ctx`, Stable, Since 0.1.1): the single
+  sanctioned higher-timeframe read and the **only** `request.security` in the strategy
+  (ADR-0011). Non-repainting — `lookahead_off`, `gaps_off`, `expr[1]` (last-closed HTF bar;
+  1 HTF-bar lag by design).
+- **`ctxIsHigherTimeframe(tf) → bool`** (internal, Since 0.1.1): HTF ≥ chart-timeframe validation.
+
+### Changed
+- `PROJECT_VERSION` `0.1.0` → `0.1.1`.
+- `docs/API.md`: `ctxHtfValue` moved from *Reserved* to *Implemented* (context table); Reserved
+  section is now empty.
+- `docs/ROADMAP.md`: added the Module 02 sub-milestone version rows (`0.1.1`–`0.2.0`); current
+  marker moved to `0.1.1`.
+
+### Notes
+- No trading behavior: zero entries/exits/orders, `ta.*`, or plots. The lone `request.security`
+  lives inside `ctxHtfValue` and is **not yet invoked** (defined for Module 02's M2.4 use).
+- Parameter is named `tf` (not `timeframe`) to avoid shadowing the `timeframe.*` builtin.
+- Next: M2.2 (`0.1.2`) — trend types, inputs, configuration.
+
 ## [0.1.0] - 2026-07-01
 
 Module 01 (Core Framework) — milestone **M1.4: kernel state, lifecycle, diagnostics,
@@ -165,7 +192,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.1.0...HEAD
+[Unreleased]: https://example.com/compare/v0.1.1...HEAD
+[0.1.1]: https://example.com/compare/v0.1.0...v0.1.1
 [0.1.0]: https://example.com/compare/v0.0.4...v0.1.0
 [0.0.4]: https://example.com/compare/v0.0.3...v0.0.4
 [0.0.3]: https://example.com/compare/v0.0.2...v0.0.3

@@ -5,7 +5,7 @@ document grows alongside the code: every public function must be listed here wit
 its responsibility, parameters, return value, and notes (see
 [STYLE_GUIDE.md](STYLE_GUIDE.md) for documentation rules).
 
-- **Status:** Module 01 (Core Framework) **COMPLETE** (`v0.1.0`).
+- **Status:** Module 01 frozen (`v0.1.0`). Module 02 in progress — `v0.1.1` (M2.1: Core `ctxHtfValue`).
 - **Scope:** Only functions intended for reuse across modules are "public" and
   documented here. Private, single-use helpers are documented inline.
 
@@ -92,23 +92,29 @@ the design contract. See
 (by convention). `cfgGet` takes a `KernelState` handle until the M1.4 lifecycle provides
 a parameter-less form.
 
-### Implemented — context (`ctx`) · Since 0.0.4
+### Implemented — context (`ctx`) · Since 0.0.4 (HTF primitive Since 0.1.1)
 
-| Function | Signature | Returns | Level |
-|----------|-----------|---------|-------|
-| `ctxBuild` | `ctxBuild(cfg)` | `BarContext` | Experimental |
-| `ctxIsConfirmedBar` | `ctxIsConfirmedBar()` | `bool` | Stable |
-| `ctxIsNewBar` | `ctxIsNewBar()` | `bool` | Stable |
+| Function | Signature | Returns | Level | Since |
+|----------|-----------|---------|-------|-------|
+| `ctxBuild` | `ctxBuild(cfg)` | `BarContext` | Experimental | 0.0.4 |
+| `ctxIsConfirmedBar` | `ctxIsConfirmedBar()` | `bool` | Stable | 0.0.4 |
+| `ctxIsNewBar` | `ctxIsNewBar()` | `bool` | Stable | 0.0.4 |
+| `ctxHtfValue` | `ctxHtfValue(symbol, tf, expr)` | `float` | Stable | 0.1.1 |
 
-Strictly non-repainting (current-bar builtins only; **zero `request.security`**). Session
+Per-bar context is strictly non-repainting (current-bar builtins only). **`ctxHtfValue` is the
+single sanctioned higher-timeframe read** and the **only** place `request.security` appears in
+the entire strategy (ADR-0011): it fixes `lookahead = barmerge.lookahead_off`,
+`gaps = barmerge.gaps_off`, and reads `expr[1]` so only closed HTF bars are used (1 HTF-bar
+lag by design). Modules consume `ctxHtfValue`, never `request.security` directly. Session
 state is exposed through `BarContext.session` (built by the internal `ctxComputeSession`),
 so a separate public `ctxSessionState` is not needed.
 
 **Internal helpers (not cross-module callable):** `utilMinutesOfDay`, `utilFormatFloat`,
 `logInitBuffer`, `logLevelRank`, `logShouldEmit`, `logFormat`, `errFormat`; `cfgValidate`,
-`ctxComputeSession`, `ctxTimeframe`; `stateGet`, `stateReset` (debug). `logLevelRank` is a
-single-source severity ranking, and `logInitBuffer` a single-source ring-buffer allocator,
-that keep the public functions free of duplicated logic (no-duplication rule).
+`ctxComputeSession`, `ctxTimeframe`, `ctxIsHigherTimeframe` (HTF ≥ chart validation, Since 0.1.1);
+`stateGet`, `stateReset` (debug). `logLevelRank` is a single-source severity ranking, and
+`logInitBuffer` a single-source ring-buffer allocator, that keep the public functions free of
+duplicated logic (no-duplication rule).
 
 ### Implemented — kernel state (`state`) · Since 0.1.0
 
@@ -135,9 +141,7 @@ diagnostics harness exercising util / log / err / cfg / ctx.
 
 ### Reserved
 
-| Function | Signature | Returns | Level | Status |
-|----------|-----------|---------|-------|--------|
-| `ctxHtfValue` | `ctxHtfValue(symbol, timeframe, expr)` | `<series>` | Stable | Reserved — deferred until the first module needing `request.security` (≥ M02) |
+None. (`ctxHtfValue` was implemented in `0.1.1` — see the context table above.)
 
 ## Other module public functions
 

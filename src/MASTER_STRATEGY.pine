@@ -10,19 +10,20 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.1.0  (Module 01 · M1.4 — kernel state, lifecycle, integration)
+//  Version      : 0.1.1  (Module 02 · M2.1 — Core ctxHtfValue HTF primitive)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
-//  STATUS       : Module 01 (Core Framework) COMPLETE. All subsystems implemented
-//                 and wired via the lifecycle:
-//                   - util / log / err / cfg / ctx / state
-//                   - coreInit() runs once; coreOnBar() runs per bar (see MAIN)
-//                   - debug diagnostics harness exercises every subsystem
-//                 Foundation only — still NO trading behavior: no entries/exits/
-//                 orders, no request.security, no ta.*, no plots, no calculations.
-//                 coreOnBar() returns the BarContext seam that modules 02-14 will
-//                 consume. ctxHtfValue remains reserved (>= Module 02).
+//  STATUS       : Module 01 (Core Framework) frozen at v0.1.0. Module 02 (Trend
+//                 Engine) in progress. M2.1 implements the reserved Core HTF
+//                 primitive:
+//                   - ctxHtfValue        : the single sanctioned request.security
+//                                          wrapper (non-repainting; ADR-0011).
+//                   - ctxIsHigherTimeframe: HTF >= chart timeframe validation.
+//                 Defined but not yet invoked; no trend logic. Still NO trading
+//                 behavior: no entries/exits/orders, no ta.*, no plots, no
+//                 calculations. The ONLY request.security in the strategy lives
+//                 inside ctxHtfValue and is not yet called.
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -69,7 +70,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.1.0"
+const string PROJECT_VERSION = "0.1.1"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -594,10 +595,10 @@ cfgGet(KernelState state) =>
     state.config
 
 // -----------------------------------------------------------------------------
-//  Core · ctx — per-bar context (M1.3): confirmed-bar / session / timeframe.
-//  Strictly non-repainting: current-bar builtins only; NO request.security.
-//  ctxHtfValue is reserved (docs/API.md), deferred until a module needs
-//  request.security (>= Module 02).
+//  Core · ctx — per-bar context: confirmed-bar / session / timeframe (M1.3),
+//  plus the sanctioned higher-timeframe read ctxHtfValue (M2.1).
+//  Non-repainting throughout. ALL request.security in the strategy lives inside
+//  ctxHtfValue (ADR-0011); it appears nowhere else.
 // -----------------------------------------------------------------------------
 
 // ctxTimeframe()   @internal
@@ -642,6 +643,36 @@ ctxIsNewBar() =>
 //   Determinism    : deterministic per bar; non-repainting.  Errors: none.
 ctxBuild(Config cfg) =>
     BarContext.new(bar_index, time, ctxIsConfirmedBar(), ctxIsNewBar(), ctxComputeSession(cfg), ctxTimeframe())
+
+// ctxIsHigherTimeframe(tf)   @internal
+//   Responsibility : Whether `tf` is higher than or equal to the chart timeframe
+//                    (i.e. a valid higher-timeframe target).
+//   Parameters     : tf — a timeframe string (e.g. "5", "15", "60").
+//   Returns        : bool — true when tf >= chart timeframe.
+//   Determinism    : deterministic; constant per run.  Errors: none.
+//   Note           : parameter is named `tf` (not `timeframe`) to avoid shadowing
+//                    the `timeframe.*` builtin namespace.
+ctxIsHigherTimeframe(string tf) =>
+    timeframe.in_seconds(tf) >= timeframe.in_seconds()
+
+// ctxHtfValue(symbol, tf, expr)   @stable
+//   Responsibility : The single sanctioned higher-timeframe read. ALL
+//                    request.security in the strategy lives here (ADR-0011);
+//                    modules consume this, never request.security directly.
+//   Parameters     : symbol — ticker id (e.g. syminfo.tickerid).
+//                    tf     — target timeframe string (>= chart timeframe).
+//                    expr   — series float to evaluate in the HTF context.
+//   Returns        : float — the value from the last CLOSED HTF bar.
+//   Determinism    : deterministic; non-repainting.
+//   Non-repainting : lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off,
+//                    and expr[1] so only confirmed (closed) HTF bars are read — a
+//                    1 HTF-bar lag by design (docs/KNOWN_LIMITATIONS.md).
+//   Errors         : none (na propagates when HTF history is unavailable; callers
+//                    guard with utilIsValidNumber).
+//   Note           : parameter is named `tf` (not `timeframe`) to avoid shadowing
+//                    the `timeframe.*` builtin namespace.
+ctxHtfValue(string symbol, string tf, float expr) =>
+    request.security(symbol, tf, expr[1], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
 
 // -----------------------------------------------------------------------------
 //  Core · state — single persistent KernelState (M1.4).
@@ -787,4 +818,15 @@ BarContext context = coreOnBar(coreState)
 //
 //  Module 01 (Core Framework) is COMPLETE at v0.1.0.
 //  See docs/ROADMAP.md for the authoritative version timeline.
+// =============================================================================
+
+
+// =============================================================================
+//  MODULE 02 — MILESTONE PROGRESS (Trend Engine)
+// -----------------------------------------------------------------------------
+//    [x] M2.1  Core ctxHtfValue HTF primitive                  (v0.1.1, current)
+//    [ ] M2.2  Trend types, inputs, configuration              (v0.1.2)
+//    [ ] M2.3  Chart-timeframe trend model                     (v0.1.3)
+//    [ ] M2.4  Multi-timeframe synthesis + confidence/quality  (v0.1.4)
+//    [ ] M2.5  Integration + finalize (Trend API -> Stable)    (v0.2.0)
 // =============================================================================
