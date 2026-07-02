@@ -1063,9 +1063,13 @@ coreOnBar(KernelState state) =>
 //   Determinism    : deterministic; non-repainting (bar close).
 //   Note           : Raw EMA/ATR values stay local; never exposed (R6/R7).
 trendSignedStrength(TrendConfig tcfg) =>
-    float fast = ta.ema(close, tcfg.fastLength)
-    float slow = ta.ema(close, tcfg.slowLength)
-    float atr  = ta.atr(tcfg.slowLength)
+    // ta.ema/ta.atr require a `simple int` length; UDT fields are `series int` (CE10123).
+    // Pass the simple-int inputs directly. The fast/slow lengths are validated (fatal
+    // fast>=slow) but never mutated, so the inputs equal tcfg.fast/slowLength — identical
+    // behavior, config validation preserved. (tcfg retained for the formula's contract.)
+    float fast = ta.ema(close, inpTrendFastLength)
+    float slow = ta.ema(close, inpTrendSlowLength)
+    float atr  = ta.atr(inpTrendSlowLength)
     bool  valid = utilIsValidNumber(fast) and utilIsValidNumber(slow) and utilIsValidNumber(atr) and atr > 0
     float strength = not valid ? UTIL_NORMALIZED_MIN : utilClamp(utilSafeDiv(math.abs(fast - slow), atr, UTIL_NORMALIZED_MIN), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
     not valid ? UTIL_NORMALIZED_MIN : math.sign(fast - slow) * strength
@@ -1230,9 +1234,11 @@ trendSelfCheck(TrendState ts, TrendConfig tcfg) =>
 //   Determinism    : deterministic; non-repainting (bar close).
 //   Note           : Raw velocity/ATR values stay local; never exposed.
 momentumSignedStrength(MomentumConfig mcfg) =>
-    float velFast = ta.mom(close, mcfg.fastLength)   // fast-horizon price velocity
-    float velSlow = ta.mom(close, mcfg.slowLength)   // slow-horizon price velocity
-    float atr     = ta.atr(mcfg.slowLength)
+    float velFast = ta.mom(close, mcfg.fastLength)   // fast-horizon price velocity (ta.mom accepts series int)
+    float velSlow = ta.mom(close, mcfg.slowLength)   // slow-horizon price velocity (ta.mom accepts series int)
+    // ta.atr requires a `simple int` length; UDT fields are `series int` (CE10123). The
+    // simple input equals mcfg.slowLength (validated, unmutated) — identical behavior.
+    float atr     = ta.atr(inpMomentumSlowLength)
     bool  valid   = utilIsValidNumber(velFast) and utilIsValidNumber(velSlow) and utilIsValidNumber(atr) and atr > 0
     float blended = math.avg(velFast, velSlow)
     float strength = not valid ? UTIL_NORMALIZED_MIN : utilClamp(math.abs(utilSafeDiv(blended, atr, UTIL_NORMALIZED_MIN)), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
