@@ -10,24 +10,24 @@
 //                 under src/modules/ as markdown only).
 //  Market       : XAUUSD (Gold vs. US Dollar)
 //  Timeframes   : M1, M5 (intraday scalping)
-//  Version      : 0.2.2  (Module 03 · M3.2 — chart-timeframe momentum model)
+//  Version      : 0.2.3  (Module 03 · M3.3 — momentum multi-timeframe confirmation)
 //  License      : MIT (see LICENSE)
 //  Language     : Pine Script v6 ONLY
 //
 //  STATUS       : Module 01 (Core Framework) frozen at v0.1.0. Module 02 (Trend
 //                 Engine) COMPLETE and FROZEN at v0.2.0 (ADR-0016). Module 03
-//                 (Momentum Engine) in progress. M3.2 adds the CHART-TIMEFRAME
-//                 momentum model:
-//                   - one REPLACEABLE signed-strength formula on the chart plus a
-//                     chart-only acceleration (magnitude of change).
-//                   - momentumChartView / classify helpers -> momentumEvaluate,
-//                     the sole producer of MomentumState and sole toucher of
-//                     momentumMemory. Consumes TrendState READ-ONLY (trendAligned).
-//                 Chart TF only; MTF (ctxHtfValue) arrives in M3.3. request.security
-//                 stays inside ctxHtfValue only (count = 1); the single existing
-//                 ctxHtfValue call site (Trend) is unchanged — momentum adds none.
-//                 NO signals/entries/exits/orders, no plots, no alerts, no
-//                 diagnostics/self-check yet — momentum is computed, not acted upon.
+//                 (Momentum Engine) in progress. M3.3 adds MULTI-TIMEFRAME
+//                 confirmation:
+//                   - the one REPLACEABLE signed-strength formula now runs on the
+//                     chart AND on the HTF via a single ctxHtfValue call.
+//                   - momentumChartView / momentumHtfView -> momentumMergeViews
+//                     compute alignment and now-independent confidence/quality;
+//                     isActive is gated by trendAligned when requireTrendAlignment.
+//                 momentumEvaluate remains the sole producer of MomentumState and
+//                 sole toucher of momentumMemory. ctxHtfValue is now invoked at
+//                 TWO call sites project-wide (Trend 1 + Momentum 1); request.security
+//                 stays inside ctxHtfValue only (count = 1). NO signals/entries/
+//                 exits/orders, no plots, no alerts, no diagnostics/self-check yet.
 //
 //  REPAINTING   : Forbidden project-wide. When logic is added, all higher-
 //                 timeframe access will use request.security(..., lookahead =
@@ -74,7 +74,7 @@ strategy(
 
 // -- Project identity ---------------------------------------------------------
 const string PROJECT_NAME    = "XAU AI Institutional Scalper Pro"
-const string PROJECT_VERSION = "0.2.2"
+const string PROJECT_VERSION = "0.2.3"
 const string PRIMARY_SYMBOL  = "XAUUSD"
 
 // -- Total number of planned modules (see docs/ROADMAP.md). Documentation /
@@ -1205,15 +1205,18 @@ trendSelfCheck(TrendState ts, TrendConfig tcfg) =>
 
 
 // =============================================================================
-//  MODULE 03 — MOMENTUM ENGINE (chart-timeframe model, M3.2)
+//  MODULE 03 — MOMENTUM ENGINE (multi-timeframe confirmation, M3.3)
 // -----------------------------------------------------------------------------
-//  Produces the immutable MomentumState (the ABI). Chart timeframe only; MTF is
-//  added in M3.3. The momentum FORMULA lives entirely in the @internal helpers
-//  and is replaceable without changing MomentumState. Consumes TrendState
-//  READ-ONLY (via the frozen trendDirection accessor); never mutates it. No
-//  signals, orders, plots, or alerts. momentumEvaluate is the sole producer of
-//  MomentumState and the sole reader/updater of KernelState.momentumMemory.
-//  ctxHtfValue is NOT called here in M3.2 (chart TF only).
+//  Produces the immutable MomentumState (the ABI). One REPLACEABLE signed-strength
+//  formula is evaluated on the chart directly and on the HTF through the single
+//  Core wrapper ctxHtfValue; momentumChartView/momentumHtfView -> momentumMergeViews
+//  then derive alignment and now-independent confidence/quality. The FORMULA stays
+//  in the @internal helpers and is replaceable without changing MomentumState.
+//  Consumes TrendState READ-ONLY (via the frozen trendDirection accessor); never
+//  mutates it. No signals, orders, plots, or alerts. momentumEvaluate is the sole
+//  producer of MomentumState and the sole reader/updater of KernelState.momentumMemory.
+//  ctxHtfValue is invoked at EXACTLY ONE Module 03 call site (momentumHtfView);
+//  request.security lives ONLY inside ctxHtfValue (ADR-0011/0015).
 // =============================================================================
 
 // momentumSignedStrength(mcfg)   @internal
@@ -1270,6 +1273,37 @@ momentumDecodeSigned(float signed, TimeframeClass tf) =>
 momentumChartView(MomentumConfig mcfg) =>
     momentumDecodeSigned(momentumSignedStrength(mcfg), ctxTimeframe().tfClass)
 
+// momentumHtfView(mcfg)   @internal
+//   Responsibility : Compute the HIGHER-timeframe momentum view by reading the
+//                    SAME signed formula through Core's ctxHtfValue. This is the
+//                    ONLY ctxHtfValue call site in Module 03 (HTF budget = 1);
+//                    it never calls request.security itself (ADR-0011/0015).
+//   Parameters     : mcfg — MomentumConfig (supplies htfTimeframe).
+//   Returns        : MomentumTimeframeView (HTF direction + strength in [0, 1]).
+//   Determinism    : deterministic; non-repainting (confirmed HTF bar, expr[1]).
+momentumHtfView(MomentumConfig mcfg) =>
+    momentumDecodeSigned(ctxHtfValue(mcfg.htfTimeframe, momentumSignedStrength(mcfg)), TimeframeClass.other)
+
+// momentumMergeViews(chart, htf, mcfg)   @internal
+//   Responsibility : Synthesize the chart and HTF views into the final direction,
+//                    strength, confidence, quality and alignment. Chart drives
+//                    direction/strength; the HTF confirms (raising confidence when
+//                    aligned, penalizing it when it disagrees). When MTF is off or
+//                    the HTF read is invalid the chart view stands alone.
+//   Parameters     : chart, htf — MomentumTimeframeView; mcfg — MomentumConfig.
+//   Returns        : [Direction dir, float strength, float confidence,
+//                     float quality, bool aligned] (all normalized to [0, 1]).
+//   Determinism    : pure.  Errors: none (na-safe via clamp helpers).
+momentumMergeViews(MomentumTimeframeView chart, MomentumTimeframeView htf, MomentumConfig mcfg) =>
+    bool useHtf = mcfg.useMtf and htf.valid
+    Direction dir = chart.direction
+    float strength = chart.strength
+    bool aligned = not useHtf ? true : chart.direction == htf.direction and chart.direction != Direction.flat
+    float confidenceRaw = not useHtf ? chart.strength : aligned ? math.avg(chart.strength, htf.strength) : math.max(UTIL_NORMALIZED_MIN, chart.strength - htf.strength)
+    float confidence = utilClamp(confidenceRaw, UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+    float quality = utilClamp(math.avg(strength, confidence), UTIL_NORMALIZED_MIN, UTIL_NORMALIZED_MAX)
+    [dir, strength, confidence, quality, aligned]
+
 // momentumClassifyStrength(strength, mcfg)   @internal
 //   Responsibility : Map a normalized strength to a discrete band.
 //   Returns        : MomentumStrength.  Determinism: pure.  Errors: none.
@@ -1301,24 +1335,25 @@ momentumConfirmsTrendDir(Direction momDir, TrendState trend) =>
 //   Returns        : MomentumState (per-bar snapshot).
 //   Determinism    : deterministic; non-repainting; O(1) per bar.
 //   Errors         : none (guards na via util helpers).
-//   Note           : chart-only baseline — confidence/quality track strength and
-//                    alignment (chart/HTF) is trivially true; MTF differentiates
-//                    them in M3.3. trendAligned is computed and exposed now.
+//   Note           : MTF-aware — chart drives direction/strength; the HTF view
+//                    (via momentumHtfView/ctxHtfValue) differentiates confidence
+//                    and quality and sets chart/HTF alignment. momentumHtfView is
+//                    called UNCONDITIONALLY (v6 series safety); momentumMergeViews
+//                    ignores it when mcfg.useMtf is off or the HTF read is invalid.
+//                    isActive is additionally gated by trendAligned when
+//                    mcfg.requireTrendAlignment is set (Trend read-only).
 momentumEvaluate(KernelState state, BarContext context, TrendState trend) =>
     // momentumEvaluate is the sole toucher of momentumMemory — including its lazy init.
     if na(state.momentumMemory)
         state.momentumMemory := MomentumMemory.new()
     MomentumConfig mcfg = cfgGet(state).momentum
     MomentumTimeframeView chart = momentumChartView(mcfg)
-    Direction dir      = chart.direction
-    float     strength = chart.strength
+    MomentumTimeframeView htf   = momentumHtfView(mcfg)
+    [dir, strength, confidence, quality, aligned] = momentumMergeViews(chart, htf, mcfg)
     float     acceleration = momentumRawAcceleration(strength, mcfg.accelLength)
-    float     confidence   = dir == Direction.flat ? UTIL_NORMALIZED_MIN : strength
-    float     quality      = dir == Direction.flat ? UTIL_NORMALIZED_MIN : strength
-    bool      aligned      = true
     bool      trendAligned = momentumConfirmsTrendDir(dir, trend)
     MomentumStrength band  = momentumClassifyStrength(strength, mcfg)
-    bool      active       = dir != Direction.flat and strength >= mcfg.strengthThreshold
+    bool      active       = dir != Direction.flat and strength >= mcfg.strengthThreshold and (not mcfg.requireTrendAlignment or trendAligned)
     MomentumPhase phase    = momentumClassifyPhase(dir, strength, acceleration, state.momentumMemory.previousDirection, state.momentumMemory.previousStrength, state.momentumMemory.barsInMomentum, mcfg)
     MomentumState ms = MomentumState.new(dir, band, strength, acceleration, confidence, quality, phase, aligned, trendAligned, active, context.barIndex)
     // Update cross-bar memory (only momentumEvaluate; O(1)). Read prev* before overwriting.
@@ -1348,7 +1383,7 @@ momentumQuality(MomentumState ms) => ms.quality
 momentumPhase(MomentumState ms) => ms.phase
 // momentumIsActive(ms)     — tradeable momentum present.
 momentumIsActive(MomentumState ms) => ms.isActive
-// momentumIsAligned(ms)    — chart/HTF agreement (trivially true until M3.3).
+// momentumIsAligned(ms)    — chart/HTF agreement (MTF; true when MTF off / HTF invalid).
 momentumIsAligned(MomentumState ms) => ms.aligned
 // momentumTrendAligned(ms) — momentum agrees with the trend direction (read-only Trend).
 momentumTrendAligned(MomentumState ms) => ms.trendAligned
@@ -1373,7 +1408,7 @@ momentumTrendAligned(MomentumState ms) => ms.trendAligned
 // -----------------------------------------------------------------------------
 //  Single lifecycle wiring. coreInit() runs once (var initializer); coreOnBar()
 //  runs every bar and returns the BarContext; trendEvaluate() then computes the
-//  multi-timeframe TrendState; momentumEvaluate() then computes the chart-TF
+//  multi-timeframe TrendState; momentumEvaluate() then computes the multi-timeframe
 //  MomentumState (consuming the trend read-only). No orders, no plots, no alerts
 //  — both are computed but NOT acted upon (zero trading behavior). `context`,
 //  `trend`, and `momentum` are the seams the decision modules (09) will consume.
@@ -1387,7 +1422,7 @@ TrendState trend = trendEvaluate(coreState, context)
 // in production). Mirrors the Core self-tests; never mutates state or emits output.
 if cfgGet(coreState).debugEnabled
     trendSelfCheck(trend, cfgGet(coreState).trend)
-// Module 03 — compute the chart-timeframe momentum each bar. Consumes `trend`
+// Module 03 — compute the multi-timeframe momentum each bar. Consumes `trend`
 // READ-ONLY; `momentum` is a seam for later modules; unused for now (no
 // signals/orders/plots). momentumEvaluate is the sole producer of MomentumState.
 MomentumState momentum = momentumEvaluate(coreState, context, trend)
@@ -1424,8 +1459,8 @@ MomentumState momentum = momentumEvaluate(coreState, context, trend)
 //  MODULE 03 — MILESTONE PROGRESS (Momentum Engine)
 // -----------------------------------------------------------------------------
 //    [x] M3.1  Momentum types, inputs, configuration            (v0.2.1)
-//    [x] M3.2  Chart-timeframe momentum model                   (v0.2.2, current)
-//    [ ] M3.3  Multi-timeframe confirmation                     (v0.2.3)
+//    [x] M3.2  Chart-timeframe momentum model                   (v0.2.2)
+//    [x] M3.3  Multi-timeframe confirmation                     (v0.2.3, current)
 //    [ ] M3.4  Diagnostics + stabilization                      (v0.2.4)
 //    [ ] M3.5  Integration + finalize (Momentum API -> Stable)  (v0.3.0)
 // =============================================================================

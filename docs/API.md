@@ -5,7 +5,7 @@ document grows alongside the code: every public function must be listed here wit
 its responsibility, parameters, return value, and notes (see
 [STYLE_GUIDE.md](STYLE_GUIDE.md) for documentation rules).
 
-- **Status:** Module 01 frozen (`v0.1.0`). Module 02 complete — `v0.2.0` (frozen, ADR-0016). Module 03 in progress — `v0.2.2` (M3.2: chart-timeframe momentum model).
+- **Status:** Module 01 frozen (`v0.1.0`). Module 02 complete — `v0.2.0` (frozen, ADR-0016). Module 03 in progress — `v0.2.3` (M3.3: multi-timeframe momentum confirmation).
 - **Scope:** Only functions intended for reuse across modules are "public" and
   documented here. Private, single-use helpers are documented inline.
 
@@ -247,10 +247,10 @@ sufficient.
 
 ## Module 03 — Momentum Engine
 
-Chart-timeframe momentum model implemented (M3.2, `v0.2.2`); MTF confirmation arrives in M3.3. The
-`momentum*` public API is **Experimental until `v0.3.0`**. `MomentumState` is the immutable per-bar
-ABI; momentum direction reuses Core `Direction`. Momentum depends only on Core (Module 01) and Trend
-(Module 02, consumed **read-only** via `trendDirection`); it never mutates `TrendState`.
+Multi-timeframe momentum model implemented (M3.3, `v0.2.3`). The `momentum*` public API is
+**Experimental until `v0.3.0`**. `MomentumState` is the immutable per-bar ABI; momentum direction
+reuses Core `Direction`. Momentum depends only on Core (Module 01) and Trend (Module 02, consumed
+**read-only** via `trendDirection`); it never mutates `TrendState`.
 
 ### Public API (Since 0.2.2) · Experimental
 
@@ -264,15 +264,18 @@ ABI; momentum direction reuses Core `Direction`. Momentum depends only on Core (
 | `momentumQuality` | `momentumQuality(ms)` | `float` 0..1 | pure accessor |
 | `momentumPhase` | `momentumPhase(ms)` | `MomentumPhase` | pure accessor |
 | `momentumIsActive` | `momentumIsActive(ms)` | `bool` | pure accessor |
-| `momentumIsAligned` | `momentumIsAligned(ms)` | `bool` | pure accessor (chart/HTF; trivially true until M3.3) |
+| `momentumIsAligned` | `momentumIsAligned(ms)` | `bool` | pure accessor (chart/HTF agreement; `true` when MTF off / HTF invalid) |
 | `momentumTrendAligned` | `momentumTrendAligned(ms)` | `bool` | pure accessor (momentum agrees with trend direction) |
 
-**Internal helpers (Since 0.2.2):** `momentumSignedStrength`, `momentumRawAcceleration`,
-`momentumDecodeSigned`, `momentumChartView`, `momentumClassifyStrength`, `momentumClassifyPhase`,
-`momentumConfirmsTrendDir`. The momentum **formula lives entirely in these helpers** (fast/slow
-price velocity scaled by ATR, normalized) and is replaceable without changing `MomentumState`; raw
-indicator values never reach `MomentumState`. No `ctxHtfValue`/`request.security` is used here (chart
-TF only; HTF arrives in M3.3).
+**Internal helpers:** `momentumSignedStrength`, `momentumRawAcceleration`, `momentumDecodeSigned`,
+`momentumChartView`, `momentumClassifyStrength`, `momentumClassifyPhase`, `momentumConfirmsTrendDir`
+(Since 0.2.2); `momentumHtfView`, `momentumMergeViews` (Since 0.2.3). The momentum **formula lives
+entirely in these helpers** — one signed-strength scalar (fast/slow price velocity scaled by ATR)
+is evaluated on the chart directly and on the HTF through Core's `ctxHtfValue`, then
+`momentumMergeViews` synthesizes direction/strength/confidence/quality/alignment. Replaceable
+without changing `MomentumState`; raw indicator values never reach `MomentumState`. `momentumHtfView`
+holds the **only** `ctxHtfValue` call site in Module 03 (project-wide call sites: Trend 1 + Momentum
+1 = 2 ≤ 8); `request.security` remains exclusively inside `ctxHtfValue`.
 
 ### Enums (Since 0.2.1)
 

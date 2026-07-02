@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.2.3] - 2026-07-02
+
+Module 03 (Momentum Engine) — milestone **M3.3: multi-timeframe confirmation**. The chart-timeframe
+momentum is now confirmed against a higher timeframe, with independent confidence and quality; still
+no signals/orders/plots/alerts. (The `v0.2.3` git tag is created manually after review.)
+
+### Added
+- **Internal helpers:** `momentumHtfView` (reads the same signed formula on the HTF via Core's
+  `ctxHtfValue` — the **only** `ctxHtfValue` call site in Module 03) and `momentumMergeViews`
+  (synthesizes chart + HTF into direction/strength/confidence/quality/alignment).
+
+### Changed
+- `PROJECT_VERSION` `0.2.2` → `0.2.3`.
+- **`ctxHtfValue` is now invoked from Module 03** (`momentumHtfView`) — project-wide `ctxHtfValue`
+  call sites are now **2** (Trend 1 + Momentum 1; ≤ 8). The lone `request.security` still lives
+  **only** inside `ctxHtfValue` (executable count = 1); no new wrapper.
+- `momentumEvaluate` now consumes `momentumChartView` + `momentumHtfView` through
+  `momentumMergeViews`; `confidence`/`quality` are independent of `strength`, `aligned` is real, and
+  `isActive` is additionally gated by `trendAligned` when `requireTrendAlignment` is set. Remains the
+  sole producer of `MomentumState` and sole toucher of `momentumMemory`.
+- `momentumIsAligned` now reports real chart/HTF agreement (was trivially `true`).
+- `docs/ROADMAP.md`: current marker moved to `0.2.3`.
+
+### Notes
+- **Non-repainting preserved:** the HTF read uses Core's frozen `ctxHtfValue` (`expr[1]`,
+  `lookahead_off`, `gaps_off`; 1 HTF-bar lag). `momentumHtfView` is called unconditionally (Pine v6
+  series safety); `momentumMergeViews` ignores it when MTF is off or the HTF read is invalid, so the
+  chart view stands alone.
+- `MOM-CFG-001` (HTF ≥ chart when MTF on) was already active since M3.1; it is now genuinely
+  exercised because momentum reads the HTF. No validation change was required.
+- **Invariants:** exactly one executable `request.security`; `MomentumState.new()` only in
+  `momentumEvaluate`; `momentumMemory` touched only by `momentumEvaluate`; `TrendState` read-only;
+  deterministic; O(1) per bar (no loops). No new public API; `MomentumTimeframeView` stays internal.
+- Next: M3.4 (`0.2.4`) — diagnostics + stabilization.
+
 ## [0.2.2] - 2026-07-01
 
 Module 03 (Momentum Engine) — milestone **M3.2: chart-timeframe momentum model**. Momentum now
@@ -407,7 +442,8 @@ no behavior. (The `v0.0.2` git tag is created after review.)
   roadmap. No trading logic, indicators, entries, exits, or calculations.
 - Documentation-only `src/modules/` tree with one folder per planned module.
 
-[Unreleased]: https://example.com/compare/v0.2.2...HEAD
+[Unreleased]: https://example.com/compare/v0.2.3...HEAD
+[0.2.3]: https://example.com/compare/v0.2.2...v0.2.3
 [0.2.2]: https://example.com/compare/v0.2.1...v0.2.2
 [0.2.1]: https://example.com/compare/v0.2.0...v0.2.1
 [0.2.0]: https://example.com/compare/v0.1.4...v0.2.0

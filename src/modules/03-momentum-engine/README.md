@@ -3,7 +3,7 @@
 > Documentation only. Implementation lives in
 > [`../../MASTER_STRATEGY.pine`](../../MASTER_STRATEGY.pine).
 >
-> **Status:** In implementation — M3.1 (`v0.2.1`) + M3.2 (`v0.2.2`) done · **Target version:** `0.3.0` · **Depends on:** Module 01 (Core) + Module 02 (Trend, read-only)
+> **Status:** In implementation — M3.1 (`v0.2.1`) + M3.2 (`v0.2.2`) + M3.3 (`v0.2.3`) done · **Target version:** `0.3.0` · **Depends on:** Module 01 (Core) + Module 02 (Trend, read-only)
 
 ## Overview
 
@@ -15,7 +15,7 @@ producing a structured, explainable observation for the Signal Engine (Module 09
 - Deterministic momentum reading with named factor contributions.
 - Evaluated on confirmed bars to avoid repainting.
 - Higher-timeframe context is read **only** through Core's `ctxHtfValue(tf, expr)`
-  ([ADR-0015](../../../docs/DECISIONS.md)) — never `request.security()` directly (arrives in M3.3).
+  ([ADR-0015](../../../docs/DECISIONS.md)) — never `request.security()` directly (M3.3+).
 - Consumes `TrendState` **read-only** (Trend remains the single source of truth for trend
   direction); never mutates it. Depends only on Core + Trend.
 - Authoritative behavior tracked here and in
@@ -61,11 +61,26 @@ Types + configuration only — no momentum logic yet.
   (stateless — memory passed as parameters).
 - **Read-only Trend consumption:** `momentumConfirmsTrendDir` reads the trend direction **only**
   through the frozen `trendDirection()` accessor; `MomentumState.trendAligned` records the agreement.
-  `TrendState` is never mutated. In M3.2 `trendAligned` is exposed but does not yet gate `isActive`.
-- Chart-only baseline: `confidence`/`quality` track `strength` and `aligned` (chart/HTF) is trivially
-  true; multi-timeframe confirmation differentiates them in **M3.3**. No `ctxHtfValue` call yet.
+  `TrendState` is never mutated.
 - Pure accessors: `momentumDirection/Strength/Acceleration/Confidence/Quality/Phase/IsActive/
   IsAligned/TrendAligned` (Experimental until `v0.3.0`).
+
+## Multi-timeframe confirmation (M3.3, v0.2.3)
+
+- The same signed-strength formula now runs on the chart **and** on the HTF. Pipeline:
+  `momentumChartView` / `momentumHtfView` → `momentumMergeViews` → `momentumEvaluate`
+  (chart-TF and HTF evaluation stay separated; HTF is optional and replaceable).
+- `momentumMergeViews`: chart drives `direction`/`strength`; the HTF **confirms** — `confidence` is
+  the chart/HTF strength average when they `align`, and is penalized (`chart − htf`, floored at 0)
+  when they disagree; `quality` averages `strength` and `confidence`. With MTF off or an invalid HTF
+  read the chart view stands alone (`aligned = true`). `isActive` is additionally gated by
+  `trendAligned` when `requireTrendAlignment` is set.
+- **`ctxHtfValue` is the ONLY `request.security` wrapper and `momentumHtfView` its ONLY Module 03
+  call site** (project-wide `ctxHtfValue` call sites: Trend 1 + Momentum 1 = 2 ≤ 8; one executable
+  `request.security`). Non-repainting is inherited from the frozen wrapper (`expr[1]`,
+  `lookahead_off`, `gaps_off`; 1 HTF-bar lag). `momentumHtfView` is invoked unconditionally (Pine v6
+  series safety); the merge decides whether to use it.
+- `MOM-CFG-001` (HTF ≥ chart when MTF on) — active since M3.1 — is now genuinely exercised.
 
 ## Design decisions
 
